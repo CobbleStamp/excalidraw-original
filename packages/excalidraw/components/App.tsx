@@ -7947,9 +7947,15 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   /** excalidraw-web: the pointer left the canvas, onto the editor's UI or out of the window: no linked element is under it. */
-  private handleCanvasPointerLeave = () => {
+  private handleCanvasPointerLeave = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+  ) => {
     this.reportLinkHover(null);
-    this.lineAnimationRuns.pointerOver("self", null, performance.now());
+    this.lineAnimationRuns.pointerOver(
+      `self:${event.pointerId}`,
+      null,
+      performance.now(),
+    );
   };
 
   /**
@@ -8261,9 +8267,10 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasPointerMove = (
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
-    // excalidraw-web: the pointer entering a line set to animate once plays it, for viewers too
+    // excalidraw-web: a pointer entering a line set to animate once plays it, for viewers too;
+    // each pointer on its own, so two fingers at once do not take turns entering it
     this.lineAnimationRuns.pointerOver(
-      "self",
+      `self:${event.pointerId}`,
       this.onceLineAt(viewportCoordsToSceneCoords(event, this.state)),
       performance.now(),
     );

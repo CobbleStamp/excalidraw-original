@@ -343,6 +343,15 @@ describe("line animation in the editor", () => {
     expect(animationLayer()).not.toBeNull();
   });
 
+  it("keeps a run going while a second pointer moves elsewhere", () => {
+    const runs = new LineAnimationRuns();
+    runs.pointerOver("self:1", "a", 0);
+    runs.pointerOver("self:2", null, 5);
+    runs.pointerOver("self:1", "a", 10);
+
+    expect(runs.current().get("a")).toBe(0);
+  });
+
   it("plays no run when the pointer enters a line with no animation", async () => {
     API.setElements([straight("line")]);
     const mouse = new Pointer("mouse");
