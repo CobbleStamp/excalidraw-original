@@ -292,4 +292,12 @@ describe("one-finger pan in pen mode", () => {
     fireEvent.pointerUp(canvas(), { ...touch(1, 100, 100), buttons: 0 });
     expect(h.elements).toHaveLength(0);
   });
+
+  it("a cancelled finger ends its pan", () => {
+    UI.clickTool("freedraw");
+    fireEvent.pointerDown(canvas(), touch(1, 100, 100));
+    expect(h.app.pan.isActive()).toBe(true);
+    fireEvent.pointerCancel(canvas(), touch(1, 100, 100));
+    expect(h.app.pan.isActive()).toBe(false);
+  });
 });

@@ -252,6 +252,7 @@ export class AppPan {
         );
         app.ownerWindow.removeEventListener(EVENT.POINTER_MOVE, onPointerMove);
         app.ownerWindow.removeEventListener(EVENT.POINTER_UP, teardown);
+        app.ownerWindow.removeEventListener(EVENT.POINTER_CANCEL, onCancel);
         app.ownerWindow.removeEventListener(EVENT.BLUR, teardown);
         onPointerMove.flush();
 
@@ -275,7 +276,15 @@ export class AppPan {
         }
       },
     );
+    // the platform may take a pointer for its own gesture (on iPadOS, a
+    // swipe from the screen's edge) and cancel it, with no pointerup
+    const onCancel = (event: PointerEvent) => {
+      if (touchPointerId === null || event.pointerId === touchPointerId) {
+        teardown();
+      }
+    };
     this.teardown = teardown;
+    app.ownerWindow.addEventListener(EVENT.POINTER_CANCEL, onCancel);
     app.ownerWindow.addEventListener(EVENT.BLUR, teardown);
     app.ownerWindow.addEventListener(EVENT.POINTER_MOVE, onPointerMove, {
       passive: true,
