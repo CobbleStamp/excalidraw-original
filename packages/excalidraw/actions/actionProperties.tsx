@@ -120,7 +120,9 @@ import { FontPicker } from "../components/FontPicker/FontPicker";
 import { IconPicker } from "../components/IconPicker";
 import { Range } from "../components/Range";
 import {
+  animationTargetsOf,
   canAnimateFor,
+  isAnimatedFor,
   takesStrokeColor,
 } from "../components/shapeActionPredicates";
 import {
@@ -2164,10 +2166,8 @@ export const actionChangeAnimationEffect = register<AnimationEffect>({
   trackEvent: false,
   perform: (elements, appState, value, app) => ({
     elements: changeProperty(elements, appState, (el) =>
-      value !== undefined &&
-      isAnimated(el) &&
-      canAnimateFor(el, app) &&
-      animationEffectsOf(el).includes(value)
+      isAnimatedFor(el, app) &&
+      animationEffectsOf(el).some((effect) => effect === value)
         ? newElementWith(el, { animationEffect: value })
         : el,
     ),
@@ -2175,10 +2175,10 @@ export const actionChangeAnimationEffect = register<AnimationEffect>({
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   }),
   PanelComponent: ({ elements, app, updateData }) => {
-    const animated = getTargetElements(
-      app.scene.getNonDeletedElementsMap(),
+    const animated = animationTargetsOf(
+      getTargetElements(app.scene.getNonDeletedElementsMap(), app.state),
       app.state,
-    ).filter((element) => isAnimated(element) && canAnimateFor(element, app));
+    ).filter((element) => isAnimatedFor(element, app));
     // the panel shows Effect only when every animated element offers the same effects
     const offered = animated.length > 0 ? animationEffectsOf(animated[0]) : [];
     return (
@@ -2197,8 +2197,8 @@ export const actionChangeAnimationEffect = register<AnimationEffect>({
               elements,
               app,
               (element) =>
-                isAnimated(element) ? animationEffectOf(element) : null,
-              isAnimated,
+                isAnimatedFor(element, app) ? animationEffectOf(element) : null,
+              (element) => isAnimatedFor(element, app),
               null,
             )}
             onChange={(value) => updateData(value)}
@@ -2216,7 +2216,7 @@ export const actionChangeAnimationSpeed = register<number>({
   trackEvent: false,
   perform: (elements, appState, value, app) => ({
     elements: changeProperty(elements, appState, (el) =>
-      isAnimated(el) && canAnimateFor(el, app)
+      isAnimatedFor(el, app)
         ? newElementWith(el, { animationSpeed: value })
         : el,
     ),
@@ -2228,10 +2228,10 @@ export const actionChangeAnimationSpeed = register<number>({
       elements,
       app,
       (element) =>
-        isAnimated(element)
+        isAnimatedFor(element, app)
           ? element.animationSpeed ?? DEFAULT_ANIMATION_SPEED
           : null,
-      isAnimated,
+      (element) => isAnimatedFor(element, app),
       null,
     );
     return (

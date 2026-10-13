@@ -40,7 +40,7 @@ import type {
 } from "./types";
 
 /** Where a travelling marker is drawn, and the way it faces */
-export type LineMarker = {
+export type AnimationMarker = {
   point: GlobalPoint;
   /** the direction of travel, in radians from the positive x axis */
   heading: number;
@@ -53,14 +53,29 @@ export type LineMarker = {
 export type AnimationPath = {
   points: readonly GlobalPoint[];
   closed: boolean;
+  /** the box around the points: min x, min y, max x, max y */
+  bounds: readonly [number, number, number, number];
+  /** the length of each stretch, in order, the closing one last when it is closed */
+  lengths: readonly number[];
+  /** the length of the whole path, in drawing units */
+  length: number;
 };
 
-const LINE_EFFECTS: readonly AnimationEffect[] = ["dot", "chevron"];
-const SHAPE_EFFECTS: readonly AnimationEffect[] = [
+/** Every effect an element may animate with, in the order the panel offers them */
+export const ANIMATION_EFFECTS = [
+  "dot",
+  "chevron",
   "travel",
   "pulse",
   "shimmer",
-];
+] as const;
+
+const LINE_EFFECTS: readonly AnimationEffect[] = ANIMATION_EFFECTS.filter(
+  (effect) => effect === "dot" || effect === "chevron",
+);
+const SHAPE_EFFECTS: readonly AnimationEffect[] = ANIMATION_EFFECTS.filter(
+  (effect) => !LINE_EFFECTS.includes(effect),
+);
 
 /** Whether an element is a line or an arrow that may animate: one not closed into a polygon */
 const isAnimatableLine = (
@@ -151,6 +166,13 @@ export const normalizeAnimationSpeed = (speed: unknown): number =>
 export const restoreAnimation = <T extends ExcalidrawElement>(
   element: T,
 ): T => {
+  if (
+    element.animation === undefined &&
+    element.animationSpeed === undefined &&
+    element.animationEffect === undefined
+  ) {
+    return element;
+  }
   const { animation, animationSpeed, animationEffect, ...rest } = element;
   if (!canAnimate(element)) {
     return rest as T;
@@ -218,7 +240,7 @@ const fromTopClockwise = (points: [number, number][]): [number, number][] => {
     return sum + x * ny - nx * y;
   }, 0);
   const clockwise = area >= 0 ? points : [...points].reverse();
-  const top = Math.min(...clockwise.map(([, y]) => y));
+  const top = clockwise.reduce((min, [, y]) => Math.min(min, y), Infinity);
   const first = clockwise.findIndex(([, y]) => Math.abs(y - top) < 1e-6);
   const next = (first + 1) % clockwise.length;
   const startsFlat = Math.abs(clockwise[next][1] - top) < 1e-6;
@@ -315,30 +337,44 @@ export const getAnimationPath = (
   }
   const [, , , , cx, cy] = getElementAbsoluteCoords(element, elementsMap);
   const center = pointFrom<GlobalPoint>(cx, cy);
-  const { points, closed } = localOutline(element);
-  const path: AnimationPath = {
-    points: points.map(([x, y]) =>
-      pointRotateRads(
-        pointFrom<GlobalPoint>(element.x + x, element.y + y),
-        center,
-        element.angle,
-      ),
+  const { points: local, closed } = localOutline(element);
+  const points = local.map(([x, y]) =>
+    pointRotateRads(
+      pointFrom<GlobalPoint>(element.x + x, element.y + y),
+      center,
+      element.angle,
     ),
+  );
+  const lengths = stretchesOf(points, closed).map(([a, b]) =>
+    pointDistance(a, b),
+  );
+  const path: AnimationPath = {
+    points,
     closed,
+    bounds: points.reduce<[number, number, number, number]>(
+      ([minX, minY, maxX, maxY], [x, y]) => [
+        Math.min(minX, x),
+        Math.min(minY, y),
+        Math.max(maxX, x),
+        Math.max(maxY, y),
+      ],
+      [Infinity, Infinity, -Infinity, -Infinity],
+    ),
+    lengths,
+    length: lengths.reduce((sum, length) => sum + length, 0),
   };
   pathCache.set(element, { version: element.version, path });
   return path;
 };
 
 /** Each stretch of a path, its start and end, closing it back to its start when it is closed */
-const stretchesOf = (path: AnimationPath): [GlobalPoint, GlobalPoint][] => {
-  const ends = path.closed ? [...path.points, path.points[0]] : path.points;
+const stretchesOf = (
+  points: readonly GlobalPoint[],
+  closed: boolean,
+): [GlobalPoint, GlobalPoint][] => {
+  const ends = closed && points.length > 0 ? [...points, points[0]] : points;
   return ends.slice(1).map((end, i) => [ends[i], end]);
 };
-
-/** The length of a path, in drawing units */
-const pathLength = (path: AnimationPath): number =>
-  stretchesOf(path).reduce((sum, [a, b]) => sum + pointDistance(a, b), 0);
 
 /** The length a travelling marker covers on an element, in drawing units */
 const travelLength = (
@@ -347,7 +383,7 @@ const travelLength = (
 ): number =>
   isAnimatableLine(element)
     ? LinearElementEditor.getPathLength(element, elementsMap)
-    : pathLength(getAnimationPath(element, elementsMap));
+    : getAnimationPath(element, elementsMap).length;
 
 /** How long one run of an element's animation with an effect takes, in milliseconds; 0 for a travelling marker on something of no length */
 export const getAnimationRunMs = (
@@ -396,11 +432,11 @@ export const getRunProgress = (
   runMs > 0 && elapsedMs < runMs ? Math.max(0, elapsedMs) / runMs : null;
 
 /** Where the marker is on a line `progress` of the way through its run, in scene coordinates */
-export const getLineMarker = (
+export const getMarkerOnLine = (
   element: ExcalidrawLinearElement,
   elementsMap: ElementsMap,
   progress: number,
-): LineMarker | null => {
+): AnimationMarker | null => {
   const length = LinearElementEditor.getPathLength(element, elementsMap);
   if (!(length > 0)) {
     return null;
@@ -436,14 +472,13 @@ export const getTravellingPoint = (
   path: AnimationPath,
   progress: number,
 ): GlobalPoint | null => {
-  const stretches = stretchesOf(path);
-  const total = stretches.reduce((sum, [a, b]) => sum + pointDistance(a, b), 0);
-  if (!(total > 0)) {
+  if (!(path.length > 0)) {
     return null;
   }
-  let left = clamp(progress, 0, 1) * total;
-  for (const [a, b] of stretches) {
-    const length = pointDistance(a, b);
+  const stretches = stretchesOf(path.points, path.closed);
+  let left = clamp(progress, 0, 1) * path.length;
+  for (const [i, [a, b]] of stretches.entries()) {
+    const length = path.lengths[i];
     if (left <= length && length > 0) {
       const share = left / length;
       return pointFrom<GlobalPoint>(

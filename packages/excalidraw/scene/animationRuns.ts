@@ -48,6 +48,11 @@ export class AnimationRuns {
     );
   }
 
+  /** Forgets a pointer that left: coming back onto an element enters it */
+  forget(pointer: string): void {
+    this.hovered.delete(pointer);
+  }
+
   /** Forgets the pointers named with `prefix` that are not among `present`, which left: coming back onto an element enters it */
   forgetPointersGone(prefix: string, present: ReadonlySet<string>): void {
     for (const pointer of [...this.hovered.keys()]) {

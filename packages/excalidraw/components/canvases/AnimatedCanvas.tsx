@@ -29,7 +29,10 @@ import type {
 } from "../../renderer/animatedScene";
 import type { AnimationRuns } from "../../scene/animationRuns";
 
-type AnimatedCanvasProps = Omit<AnimatedSceneProps, "canvas" | "animations"> & {
+type AnimatedCanvasProps = Omit<
+  AnimatedSceneProps,
+  "canvas" | "animations" | "shimmerCanvas"
+> & {
   visibleElements: readonly NonDeletedExcalidrawElement[];
   runs: AnimationRuns;
   /** whether the host lets an element animate, beyond the editor's own rule */
@@ -100,6 +103,18 @@ const animationsAt = (
 /** Draws the animations of looping elements and triggered runs, frame by frame */
 const AnimatedCanvas = (props: AnimatedCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // this editor's own canvas for shimmers, its bitmap let go when the layer goes
+  const shimmerCanvas = useRef<HTMLCanvasElement | null>(null);
+  useEffect(
+    () => () => {
+      if (shimmerCanvas.current) {
+        shimmerCanvas.current.width = 0;
+        shimmerCanvas.current.height = 0;
+        shimmerCanvas.current = null;
+      }
+    },
+    [],
+  );
   const [, runsChanged] = useReducer((count: number) => count + 1, 0);
   const { runs, ownerWindow } = props;
   useEffect(() => runs.subscribe(runsChanged), [runs]);
@@ -121,6 +136,8 @@ const AnimatedCanvas = (props: AnimatedCanvasProps) => {
     let frame = ownerWindow.requestAnimationFrame(function draw(
       timeMs: number,
     ) {
+      // the next frame is asked for first, so a frame that fails does not stop the loop
+      frame = ownerWindow.requestAnimationFrame(draw);
       const scene = latest.current;
       const animations = animationsAt(
         scene.loops,
@@ -134,9 +151,9 @@ const AnimatedCanvas = (props: AnimatedCanvasProps) => {
           ...scene,
           canvas: canvasRef.current,
           animations,
+          shimmerCanvas,
         });
       }
-      frame = ownerWindow.requestAnimationFrame(draw);
     });
     return () => ownerWindow.cancelAnimationFrame(frame);
   }, [running, ownerWindow]);

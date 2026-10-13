@@ -5514,12 +5514,20 @@ class App extends React.Component<AppProps, AppState> {
         const present = new Set<string>();
         for (const [id, collaborator] of collaborators) {
           present.add(`collaborator:${id}`);
+          const before = this.state.collaborators.get(id)?.pointer;
+          const now = collaborator.pointer;
+          // a pointer that has not moved enters nothing new
+          if (
+            this.state.collaborators.has(id) &&
+            before?.x === now?.x &&
+            before?.y === now?.y
+          ) {
+            continue;
+          }
           // a pointer that is gone is over nothing, so coming back onto an element enters it
           this.animationRuns.pointerOver(
             `collaborator:${id}`,
-            collaborator.pointer
-              ? this.onceElementsAt(collaborator.pointer)
-              : [],
+            now ? this.onceElementsAt(now) : [],
             performance.now(),
           );
         }
@@ -6947,25 +6955,10 @@ class App extends React.Component<AppProps, AppState> {
             )
     )
       .filter((el) => this.hitElement(x, y, el))
-      .filter((element) => {
-        // hitting a frame's element from outside the frame is not considered a hit
-        const containingFrame = getContainingFrame(element, elementsMap);
-        if (containingFrame && !isNonDeletedElement(containingFrame)) {
-          console.error("[NONDELETED][INVARIANT] Containing frame is deleted");
-        }
-        return containingFrame &&
-          this.state.frameRendering.enabled &&
-          this.state.frameRendering.clip &&
-          // iframe-like elements are rendered as DOM overlays and are not
-          // visually clipped by their containing frames
-          !isIframeLikeElement(element)
-          ? isCursorInFrame(
-              { x, y },
-              containingFrame as NonDeleted<ExcalidrawFrameLikeElement>,
-              elementsMap,
-            )
-          : true;
-      })
+      // hitting a frame's element from outside the frame is not considered a hit
+      .filter((element) =>
+        this.isPointInClippingFrame({ x, y }, element, elementsMap),
+      )
       .filter((el) => {
         // The parameter elements comes ordered from lower z-index to higher.
         // We want to preserve that order on the returned array.
@@ -7974,11 +7967,7 @@ class App extends React.Component<AppProps, AppState> {
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
     this.reportLinkHover(null);
-    this.animationRuns.pointerOver(
-      `self:${event.pointerId}`,
-      [],
-      performance.now(),
-    );
+    this.animationRuns.forget(`self:${event.pointerId}`);
   };
 
   /**
@@ -8028,9 +8017,34 @@ class App extends React.Component<AppProps, AppState> {
                 threshold: this.getElementHitThreshold(element),
                 elementsMap,
               })
-            : hitElementBoundingBox(at, element, elementsMap)),
+            : hitElementBoundingBox(at, element, elementsMap)) &&
+          this.isPointInClippingFrame(point, element, elementsMap),
       )
       .map((element) => element.id);
+  };
+
+  /** excalidraw-web: whether a scene point is inside the frame that clips an element, as hit testing asks; true when no frame clips it */
+  private isPointInClippingFrame = (
+    point: { x: number; y: number },
+    element: NonDeletedExcalidrawElement,
+    elementsMap: NonDeletedSceneElementsMap,
+  ): boolean => {
+    const containingFrame = getContainingFrame(element, elementsMap);
+    if (containingFrame && !isNonDeletedElement(containingFrame)) {
+      console.error("[NONDELETED][INVARIANT] Containing frame is deleted");
+    }
+    return containingFrame &&
+      this.state.frameRendering.enabled &&
+      this.state.frameRendering.clip &&
+      // iframe-like elements are rendered as DOM overlays and are not
+      // visually clipped by their containing frames
+      !isIframeLikeElement(element)
+      ? isCursorInFrame(
+          point,
+          containingFrame as NonDeleted<ExcalidrawFrameLikeElement>,
+          elementsMap,
+        )
+      : true;
   };
 
   /** excalidraw-web: tells the host's `onLinkHover` of the linked element under the pointer, when it changes. */

@@ -15,6 +15,8 @@ import type {
   ValueOf,
 } from "@excalidraw/common/utility-types";
 
+import type { ANIMATION_EFFECTS } from "./elementAnimation";
+
 export type ChartType = "bar" | "line" | "radar";
 export type FillStyle = "hachure" | "cross-hatch" | "solid" | "zigzag";
 export type FontFamilyKeys = keyof typeof FONT_FAMILY;
@@ -109,12 +111,7 @@ export type ElementAnimation = "once" | "loop";
  * along a line; on any other element, a light travelling around it, a pulse
  * or a shimmer
  */
-export type AnimationEffect =
-  | "dot"
-  | "chevron"
-  | "travel"
-  | "pulse"
-  | "shimmer";
+export type AnimationEffect = typeof ANIMATION_EFFECTS[number];
 
 export type ExcalidrawSelectionElement = _ExcalidrawElementBase & {
   type: "selection";

@@ -17,8 +17,10 @@ import {
   getDefaultRoundnessTypeForElement,
   isFrameLikeElement,
   isArrowElement,
+  animationEffectOf,
   animationEffectsOf,
   canAnimate,
+  defaultAnimationEffectOf,
   isExcalidrawElement,
   getColorUpdate,
   isNonDeletedElement,
@@ -194,14 +196,19 @@ export const actionPasteStyles = register({
               canAnimate(elementStylesToCopyFrom)
             ) {
               // excalidraw-web: an animation goes from element to element; its
-              // effect only to one that offers it
+              // effect (its own, or its kind's default) only to one that
+              // offers it, which otherwise keeps its own
               const { animation, animationSpeed, animationEffect } =
                 elementStylesToCopyFrom;
-              const effect =
-                animationEffect !== undefined &&
-                animationEffectsOf(newElement).includes(animationEffect)
-                  ? animationEffect
-                  : undefined;
+              const sourceEffect = animationEffectOf(elementStylesToCopyFrom);
+              const effect = !animationEffectsOf(newElement).includes(
+                sourceEffect,
+              )
+                ? newElement.animationEffect
+                : animationEffect === undefined &&
+                  sourceEffect === defaultAnimationEffectOf(newElement)
+                ? undefined
+                : sourceEffect;
               newElement = newElementWith(
                 newElement,
                 {

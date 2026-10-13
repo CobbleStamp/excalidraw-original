@@ -23,10 +23,12 @@ import {
   canAnimate,
   getAnimationPath,
   getAnimationRunMs,
-  getLineMarker,
+  getMarkerOnLine,
   getLoopProgress,
   getRunProgress,
+  CaptureUpdateAction,
   getTravellingPoint,
+  mutateElement,
 } from "@excalidraw/element";
 
 import type { LocalPoint, Radians } from "@excalidraw/math";
@@ -40,6 +42,10 @@ import type {
 import { Excalidraw } from "../index";
 import { restoreElements } from "../data/restore";
 import { AnimationRuns } from "../scene/animationRuns";
+import {
+  animationLightColorOf,
+  getShimmerBand,
+} from "../renderer/animatedScene";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
@@ -108,7 +114,7 @@ describe("where a line's marker is", () => {
 
   it("puts a line's dot along it from start to end, facing the end", () => {
     const line = straight("line");
-    const marker = getLineMarker(line, arrayToMap([line]), 0.25)!;
+    const marker = getMarkerOnLine(line, arrayToMap([line]), 0.25)!;
 
     expect(marker.point[0]).toBeCloseTo(60);
     expect(marker.point[1]).toBeCloseTo(20);
@@ -120,7 +126,7 @@ describe("where a line's marker is", () => {
       startArrowhead: "arrow",
       endArrowhead: null,
     });
-    const marker = getLineMarker(arrow, arrayToMap([arrow]), 0.25)!;
+    const marker = getMarkerOnLine(arrow, arrayToMap([arrow]), 0.25)!;
 
     expect(marker.point[0]).toBeCloseTo(160);
     expect(Math.abs(marker.heading)).toBeCloseTo(Math.PI);
@@ -131,7 +137,7 @@ describe("where a line's marker is", () => {
       startArrowhead: "arrow",
       endArrowhead: "arrow",
     });
-    const marker = getLineMarker(arrow, arrayToMap([arrow]), 0.25)!;
+    const marker = getMarkerOnLine(arrow, arrayToMap([arrow]), 0.25)!;
 
     expect(marker.point[0]).toBeCloseTo(60);
   });
@@ -139,7 +145,7 @@ describe("where a line's marker is", () => {
   it("follows a rotated line", () => {
     const line = straight("line", { angle: (Math.PI / 2) as Radians });
     // a quarter turn about its middle (110, 20) stands the line upright
-    const marker = getLineMarker(line, arrayToMap([line]), 0.25)!;
+    const marker = getMarkerOnLine(line, arrayToMap([line]), 0.25)!;
 
     expect(marker.point[0]).toBeCloseTo(110, 0);
     expect(marker.point[1]).toBeCloseTo(-30, 0);
@@ -283,6 +289,71 @@ describe("what a shape's animation is", () => {
     );
   });
 
+  it("works its path out again once the element is moved, resized or turned", () => {
+    const element = box("rectangle");
+    const elementsMap = arrayToMap([element]);
+    const startOf = () =>
+      getTravellingPoint(getAnimationPath(element, elementsMap), 0)!;
+
+    expect(startOf()).toEqual([50, 0]);
+
+    mutateElement(element, elementsMap, { x: 10, y: 20 });
+    expect(startOf()).toEqual([60, 20]);
+
+    mutateElement(element, elementsMap, { width: 200 });
+    expect(startOf()).toEqual([110, 20]);
+    expect(getAnimationPath(element, elementsMap).length).toBeCloseTo(500);
+
+    // half a turn about its middle (110, 45) puts its top middle at the bottom
+    mutateElement(element, elementsMap, { angle: Math.PI as Radians });
+    expect(startOf()[0]).toBeCloseTo(110);
+    expect(startOf()[1]).toBeCloseTo(70);
+  });
+
+  it("sweeps a shimmer's band from wholly before a box to wholly past it, whatever its shape", () => {
+    for (const bounds of [
+      [0, 0, 100, 50],
+      [0, 0, 20, 400],
+      [-50, 30, 450, 40],
+      [10, 10, 10, 10],
+    ] as const) {
+      // how far along the band each corner is: 0 at its start, 1 at its end
+      const alongBand = (progress: number) => {
+        const { from, to } = getShimmerBand(bounds, progress);
+        const [dx, dy] = [to[0] - from[0], to[1] - from[1]];
+        return [
+          [bounds[0], bounds[1]],
+          [bounds[2], bounds[1]],
+          [bounds[0], bounds[3]],
+          [bounds[2], bounds[3]],
+        ].map(
+          ([x, y]) =>
+            ((x - from[0]) * dx + (y - from[1]) * dy) / (dx * dx + dy * dy),
+        );
+      };
+
+      for (const at of alongBand(0)) {
+        expect(at).toBeGreaterThanOrEqual(1 - 1e-9);
+      }
+      for (const at of alongBand(1)) {
+        expect(at).toBeLessThanOrEqual(1e-9);
+      }
+    }
+  });
+
+  it("lights a stroke that does not show, and an image, in the editor's primary colour, the host's colour first", () => {
+    const hidden = box("rectangle", { strokeColor: "transparent" });
+    const faint = box("rectangle", { strokeColor: "#ff000000" });
+    const red = box("rectangle", { strokeColor: "#e03131" });
+
+    expect(animationLightColorOf(hidden)).toBe("#6965db");
+    expect(animationLightColorOf(faint)).toBe("#6965db");
+    expect(animationLightColorOf(box("image"))).toBe("#6965db");
+    expect(animationLightColorOf(red)).toBe("#e03131");
+    expect(animationLightColorOf(hidden, () => "#2f9e44")).toBe("#2f9e44");
+    expect(animationLightColorOf(hidden, () => null)).toBe("#6965db");
+  });
+
   it("runs a pencil drawing's light along its stroke, from its start, not back round", () => {
     const pencil = API.createElement({
       type: "freedraw",
@@ -363,6 +434,16 @@ describe("triggered runs", () => {
     runs.finish("b");
 
     expect(heard).toHaveBeenCalledTimes(2);
+  });
+
+  it("begin again for a pointer forgotten when it left the board", () => {
+    const runs = new AnimationRuns();
+    runs.pointerOver("self:1", ["a"], 0);
+    runs.finish("a");
+    runs.forget("self:1");
+    runs.pointerOver("self:1", ["a"], 10);
+
+    expect(runs.current().get("a")?.startedMs).toBe(10);
   });
 
   it("keeps a run going while a second pointer moves elsewhere", () => {
@@ -627,6 +708,135 @@ describe("animation in the editor", () => {
       h.elements.find((element) => element.id === id);
     expect(byId(rectangle.id)?.animation).toBe("loop");
     expect(byId(label.id)?.animation).toBeUndefined();
+  });
+
+  it("undoes and redoes the Animation and Effect choices", () => {
+    const rectangle = API.createElement({ type: "rectangle" });
+    // the rectangle's arrival is a step of its own
+    API.updateScene({
+      elements: [rectangle],
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    API.setSelectedElements([rectangle]);
+    const current = () =>
+      h.elements.find((element) => element.id === rectangle.id)!;
+
+    fireEvent.click(screen.getByTestId("animation-once"));
+    fireEvent.click(screen.getByTestId("animation-effect-pulse"));
+
+    Keyboard.undo();
+    expect(current().animation).toBe("once");
+    expect(current().animationEffect).toBeUndefined();
+
+    Keyboard.undo();
+    expect(current().isDeleted).toBe(false);
+    expect(current().animation).toBeUndefined();
+
+    Keyboard.redo();
+    expect(current().animation).toBe("once");
+
+    Keyboard.redo();
+    expect(current().animationEffect).toBe("pulse");
+  });
+
+  it("gives a shape no Effect or Speed for its label's own animation", () => {
+    const rectangle = API.createElement({ type: "rectangle" });
+    const label = {
+      ...API.createElement({
+        type: "text",
+        text: "label",
+        containerId: rectangle.id,
+      }),
+      animation: "loop",
+    } as const;
+    const container = {
+      ...rectangle,
+      boundElements: [{ type: "text", id: label.id }],
+    } as const;
+    API.setElements([container, label]);
+    API.setSelectedElements([container]);
+
+    expect(screen.getByTestId("animation-none")).toBeChecked();
+    expect(screen.queryByTestId("animation-speed")).toBeNull();
+    expect(screen.queryByTestId("animation-effect-travel")).toBeNull();
+  });
+
+  it("offers an animated arrow its Effect whatever its label's animation", () => {
+    const arrow = straight("arrow", { animation: "loop" });
+    const label = {
+      ...API.createElement({
+        type: "text",
+        text: "label",
+        containerId: arrow.id,
+      }),
+      animation: "loop",
+    } as const;
+    const container = {
+      ...arrow,
+      boundElements: [{ type: "text", id: label.id }],
+    } as AnimatableLine;
+    API.setElements([container, label]);
+    API.setSelectedElements([container]);
+
+    expect(screen.getByTestId("animation-effect-chevron")).toBeChecked();
+  });
+
+  it("copies an effect a shape does not offer by keeping the shape's own", () => {
+    const source = straight("arrow", {
+      animation: "loop",
+      animationEffect: "dot",
+    });
+    const target = {
+      ...API.createElement({ type: "rectangle" }),
+      animation: "once",
+      animationEffect: "pulse",
+    } as const;
+    API.setElements([source, target]);
+
+    API.setSelectedElements([source] as NonDeletedExcalidrawElement[]);
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () =>
+      Keyboard.codeDown(CODES.C),
+    );
+    API.setSelectedElements([target] as NonDeletedExcalidrawElement[]);
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () =>
+      Keyboard.codeDown(CODES.V),
+    );
+
+    const pasted = h.elements.find((element) => element.id === target.id)!;
+    expect(pasted.animation).toBe("loop");
+    expect(pasted.animationEffect).toBe("pulse");
+  });
+
+  it("plays no run when the pointer enters a shape outside the frame that clips it", async () => {
+    const frame = API.createElement({
+      type: "frame",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    });
+    const rectangle = {
+      ...API.createElement({
+        type: "rectangle",
+        x: 50,
+        y: 50,
+        width: 200,
+        height: 100,
+        frameId: frame.id,
+      }),
+      animation: "once",
+    } as const;
+    API.setElements([rectangle, frame]);
+    const mouse = new Pointer("mouse");
+
+    // in the shape's box, but past the frame's edge
+    mouse.moveTo(200, 120);
+    await act(async () => {});
+    expect(animationLayer()).toBeNull();
+
+    mouse.moveTo(80, 80);
+    await act(async () => {});
+    expect(animationLayer()).not.toBeNull();
   });
 
   it("plays a run when the pointer enters a shape's box set to animate once", async () => {

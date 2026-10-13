@@ -5,6 +5,7 @@ import {
   suppportsHorizontalAlign,
   getColorTargetElement,
   hasBoundTextElement,
+  isBoundToContainer,
   isElbowArrow,
   isImageElement,
   isLinearElement,
@@ -80,13 +81,38 @@ export const canAnimateFor = (
 ): boolean =>
   canAnimate(element) && (app.props.canAnimateElement?.(element) ?? true);
 
-/** excalidraw-web: whether some elements are given and all offer the same effects: all lines and arrows, or none of them. */
-const offerSameEffects = (elements: readonly ExcalidrawElement[]): boolean =>
-  elements.length > 0 &&
-  elements.every(
-    (element) =>
-      animationEffectsOf(element)[0] === animationEffectsOf(elements[0])[0],
-  );
+/** excalidraw-web: whether an element animates and may: set to animate, by the editor's rule and the host's. */
+export const isAnimatedFor = (
+  element: ExcalidrawElement,
+  app: AppClassProperties,
+): boolean => isAnimated(element) && canAnimateFor(element, app);
+
+/**
+ * excalidraw-web: the elements the animation controls act on: a shape's label
+ * goes with its shape, so it is left out, unless it is the label being edited.
+ */
+export const animationTargetsOf = (
+  targetElements: readonly ExcalidrawElement[],
+  appState: Pick<UIAppState, "editingTextElement">,
+): ExcalidrawElement[] =>
+  appState.editingTextElement
+    ? [...targetElements]
+    : targetElements.filter((element) => !isBoundToContainer(element));
+
+/** excalidraw-web: whether some elements are given and all offer the same effects. */
+const offerSameEffects = (elements: readonly ExcalidrawElement[]): boolean => {
+  if (elements.length === 0) {
+    return false;
+  }
+  const first = animationEffectsOf(elements[0]);
+  return elements.every((element) => {
+    const offered = animationEffectsOf(element);
+    return (
+      offered.length === first.length &&
+      offered.every((effect, i) => effect === first[i])
+    );
+  });
+};
 
 export const canChangeBackgroundColor = (
   appState: UIAppState,
@@ -140,6 +166,8 @@ export const getShapeActionPredicates = (
     appState.editingTextElement || appState.newElement,
   );
   const hasSelection = targetElements.length > 0;
+  // excalidraw-web: a label's own animation gives its shape no controls
+  const animationTargets = animationTargetsOf(targetElements, appState);
 
   return {
     /** some element(s) selected */
@@ -175,14 +203,12 @@ export const getShapeActionPredicates = (
     arrowType: forToolOrSelection(toolIsArrow),
     arrowheads: forToolOrSelection(canHaveArrowheads),
     // excalidraw-web: a new element has no animation, so these follow the selection only
-    animation: targetElements.some((element) => canAnimateFor(element, app)),
+    animation: animationTargets.some((element) => canAnimateFor(element, app)),
     animationEffect: offerSameEffects(
-      targetElements.filter(
-        (element) => isAnimated(element) && canAnimateFor(element, app),
-      ),
+      animationTargets.filter((element) => isAnimatedFor(element, app)),
     ),
-    animationSpeed: targetElements.some(
-      (element) => isAnimated(element) && canAnimateFor(element, app),
+    animationSpeed: animationTargets.some((element) =>
+      isAnimatedFor(element, app),
     ),
 
     // text

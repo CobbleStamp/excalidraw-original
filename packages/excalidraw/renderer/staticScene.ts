@@ -35,6 +35,7 @@ import type {
   ExcalidrawElement,
   ExcalidrawFrameLikeElement,
   NonDeletedExcalidrawElement,
+  NonDeletedSceneElementsMap,
 } from "@excalidraw/element/types";
 
 import {
@@ -50,6 +51,7 @@ import {
 } from "./helpers";
 
 import type {
+  RenderableElementsMap,
   StaticCanvasRenderConfig,
   StaticSceneRenderConfig,
 } from "../scene/types";
@@ -207,6 +209,81 @@ const outlineClip = (
   });
   context.closePath();
   context.clip();
+};
+
+/**
+ * Clips the context as the scene clips an element: to the frame it is in,
+ * when frames clip, and past the outline of each container keeping its size
+ * that holds it. Made once a frame, as it keeps what it has worked out.
+ */
+export const createElementClipper = ({
+  context,
+  appState,
+  elementsMap,
+  allElementsMap,
+  renderConfig,
+}: {
+  context: CanvasRenderingContext2D;
+  appState: StaticCanvasAppState;
+  elementsMap: RenderableElementsMap;
+  allElementsMap: NonDeletedSceneElementsMap;
+  renderConfig: StaticCanvasRenderConfig;
+}) => {
+  const inFrameGroupsMap = new Map<string, boolean>();
+  // what a container that keeps its size holds is hidden past its outline
+  const keptSizeHolders = getKeptSizeHolders(allElementsMap);
+
+  const clipElementToFrame = (
+    element: NonDeletedExcalidrawElement,
+    renderState: ElementRenderState,
+  ) => {
+    if (
+      !(element.frameId || appState.frameToHighlight?.id) ||
+      !appState.frameRendering.enabled ||
+      !appState.frameRendering.clip
+    ) {
+      return;
+    }
+    const targetFrame = getTargetFrame(element, elementsMap, appState);
+    if (!targetFrame) {
+      return;
+    }
+    const frameState = resolveElementRenderState(
+      targetFrame,
+      elementsMap,
+      renderConfig,
+      allElementsMap,
+    );
+    const frame = getRenderElementWithPositionOverride(
+      targetFrame,
+      frameState.offset,
+    );
+    const isTranslated = (state: ElementRenderState) =>
+      state.offset.x !== 0 || state.offset.y !== 0;
+    if (
+      (element.frameId === frame.id &&
+        (isTranslated(renderState) || isTranslated(frameState))) ||
+      shouldApplyFrameClip(
+        getRenderElementWithPositionOverride(element, renderState.offset),
+        frame,
+        appState,
+        elementsMap,
+        inFrameGroupsMap,
+      )
+    ) {
+      frameClip(frame, context, renderConfig, appState);
+    }
+  };
+
+  return (
+    element: NonDeletedExcalidrawElement,
+    renderState: ElementRenderState,
+  ) => {
+    clipElementToFrame(element, renderState);
+    for (const holder of keptSizeHolders.get(element.id) ?? []) {
+      outlineClip(holder, context, appState, allElementsMap);
+    }
+  };
 };
 
 type LinkIconCanvas = HTMLCanvasElement & { zoom: number };
@@ -367,8 +444,6 @@ const _renderStaticScene = ({
     }
   });
 
-  const inFrameGroupsMap = new Map<string, boolean>();
-
   const getRenderState = (element: ExcalidrawElement) =>
     resolveElementRenderState(
       element,
@@ -377,52 +452,13 @@ const _renderStaticScene = ({
       allElementsMap,
     );
 
-  const clipElementToFrame = (
-    element: NonDeletedExcalidrawElement,
-    renderState: ElementRenderState,
-  ) => {
-    if (
-      !(element.frameId || appState.frameToHighlight?.id) ||
-      !appState.frameRendering.enabled ||
-      !appState.frameRendering.clip
-    ) {
-      return;
-    }
-    const targetFrame = getTargetFrame(element, elementsMap, appState);
-    if (!targetFrame) {
-      return;
-    }
-    const frameState = getRenderState(targetFrame);
-    const frame = getRenderElementWithPositionOverride(
-      targetFrame,
-      frameState.offset,
-    );
-    const isTranslated = (state: ElementRenderState) =>
-      state.offset.x !== 0 || state.offset.y !== 0;
-    if (
-      (element.frameId === frame.id &&
-        (isTranslated(renderState) || isTranslated(frameState))) ||
-      shouldApplyFrameClip(
-        getRenderElementWithPositionOverride(element, renderState.offset),
-        frame,
-        appState,
-        elementsMap,
-        inFrameGroupsMap,
-      )
-    ) {
-      frameClip(frame, context, renderConfig, appState);
-    }
-  };
-
-  // what a container that keeps its size holds is hidden past its outline
-  const keptSizeHolders = getKeptSizeHolders(allElementsMap);
-  const clipElementToKeptSizeHolders = (
-    element: NonDeletedExcalidrawElement,
-  ) => {
-    for (const holder of keptSizeHolders.get(element.id) ?? []) {
-      outlineClip(holder, context, appState, allElementsMap);
-    }
-  };
+  const clipElement = createElementClipper({
+    context,
+    appState,
+    elementsMap,
+    allElementsMap,
+    renderConfig,
+  });
 
   // Paint visible elements
   visibleElements
@@ -442,8 +478,7 @@ const _renderStaticScene = ({
         const boundTextElement = getBoundTextElement(element, elementsMap);
 
         const renderState = getRenderState(element);
-        clipElementToFrame(element, renderState);
-        clipElementToKeptSizeHolders(element);
+        clipElement(element, renderState);
         renderElement(
           element,
           elementsMap,
@@ -509,8 +544,7 @@ const _renderStaticScene = ({
       try {
         const renderState = getRenderState(element);
         context.save();
-        clipElementToFrame(element, renderState);
-        clipElementToKeptSizeHolders(element);
+        clipElement(element, renderState);
         renderElement(
           element,
           elementsMap,
