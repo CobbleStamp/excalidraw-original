@@ -588,15 +588,30 @@ export const newFreeDrawElement = (
   };
 };
 
+/** excalidraw-web: the travelling marker a new line is made with, when it is given one */
+type LineAnimationOpts = Pick<
+  ExcalidrawLinearElement,
+  "animation" | "animationSpeed"
+>;
+
+const lineAnimationOf = (opts: LineAnimationOpts): LineAnimationOpts => ({
+  ...(opts.animation !== undefined ? { animation: opts.animation } : {}),
+  ...(opts.animationSpeed !== undefined
+    ? { animationSpeed: opts.animationSpeed }
+    : {}),
+});
+
 export const newLinearElement = (
   opts: {
     type: ExcalidrawLinearElement["type"];
     points?: ExcalidrawLinearElement["points"];
     polygon?: ExcalidrawLineElement["polygon"];
-  } & ElementConstructorOpts,
+  } & LineAnimationOpts &
+    ElementConstructorOpts,
 ): NonDeleted<ExcalidrawLinearElement> => {
   const element = {
     ..._newElementBase<ExcalidrawLinearElement>(opts.type, opts),
+    ...lineAnimationOf(opts),
     points: opts.points || [],
 
     startBinding: null,
@@ -625,13 +640,15 @@ export const newArrowElement = <T extends boolean>(
     points?: ExcalidrawArrowElement["points"];
     elbowed?: T;
     fixedSegments?: ExcalidrawElbowArrowElement["fixedSegments"] | null;
-  } & ElementConstructorOpts,
+  } & LineAnimationOpts &
+    ElementConstructorOpts,
 ): T extends true
   ? NonDeleted<ExcalidrawElbowArrowElement>
   : NonDeleted<ExcalidrawArrowElement> => {
   if (opts.elbowed) {
     return {
       ..._newElementBase<ExcalidrawElbowArrowElement>(opts.type, opts),
+      ...lineAnimationOf(opts),
       points: opts.points || [],
       startBinding: null,
       endBinding: null,
@@ -646,6 +663,7 @@ export const newArrowElement = <T extends boolean>(
 
   return {
     ..._newElementBase<ExcalidrawArrowElement>(opts.type, opts),
+    ...lineAnimationOf(opts),
     points: opts.points || [],
     startBinding: null,
     endBinding: null,

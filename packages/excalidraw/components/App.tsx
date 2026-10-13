@@ -200,6 +200,8 @@ import {
   hitElementBoundText,
   hitElementBoundingBoxOnly,
   hitElementItself,
+  canAnimateLine,
+  isOnceLine,
   getVisibleSceneBounds,
   cropElement,
   wrapText,
@@ -442,6 +444,7 @@ import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 import { isOverScrollBars } from "../scene/scrollbars";
+import { LineAnimationRuns } from "../scene/lineAnimationRuns";
 import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
 import { EraserTrail } from "../eraser";
@@ -482,6 +485,7 @@ import { searchItemInFocusAtom } from "./SearchMenu";
 import { isSidebarDockedAtom } from "./Sidebar/Sidebar";
 import { StaticCanvas, InteractiveCanvas } from "./canvases";
 import NewElementCanvas from "./canvases/NewElementCanvas";
+import AnimatedLinesCanvas from "./canvases/AnimatedLinesCanvas";
 import { isPointHittingLink } from "./hyperlink/helpers";
 import { CursorHint, CursorHints } from "./CursorHint";
 import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
@@ -834,6 +838,8 @@ class App extends React.Component<AppProps, AppState> {
 
   api: ExcalidrawImperativeAPI;
   private elementRenderOverrides: ElementRenderOverrides = new Map();
+  /** excalidraw-web: the lines playing a triggered run */
+  private lineAnimationRuns = new LineAnimationRuns();
   /** offsets of `elementRenderOverrides`; keeps its identity while they don't change */
   private elementRenderOffsets: ElementRenderOffsets = new Map();
   private renderOverridesUpdatePending = false;
@@ -873,6 +879,7 @@ class App extends React.Component<AppProps, AppState> {
       setViewport: this.viewport.setViewport,
       getViewportOffsets: this.viewport.getOffsets,
       setElementRenderOverrides: this.setElementRenderOverrides,
+      animateLines: this.animateLines,
       getSceneElements: this.getSceneElements,
       getAppState: () => this.state,
       getFiles: () => this.files,
@@ -2427,6 +2434,15 @@ class App extends React.Component<AppProps, AppState> {
     this.hasRenderableElements = renderableElementsMap.size > 0;
 
     const allElementsMap = this.scene.getNonDeletedElementsMap();
+    // what the drawn layers show, elements offset by a render override included
+    const drawnVisibleElements = this.elementRenderOffsets.size
+      ? this.renderer.getVisibleElementsWithRenderOffsets(
+          visibleElements,
+          renderableElementsMap,
+          this.state,
+          this.elementRenderOffsets,
+        )
+      : visibleElements;
 
     // a tool dragged out of the toolbar previews on the new-element canvas
     // (it is not in the scene until dropped)
@@ -2699,16 +2715,7 @@ class App extends React.Component<AppProps, AppState> {
                             rc={this.rc}
                             elementsMap={renderableElementsMap}
                             allElementsMap={allElementsMap}
-                            visibleElements={
-                              this.elementRenderOffsets.size
-                                ? this.renderer.getVisibleElementsWithRenderOffsets(
-                                    visibleElements,
-                                    renderableElementsMap,
-                                    this.state,
-                                    this.elementRenderOffsets,
-                                  )
-                                : visibleElements
-                            }
+                            visibleElements={drawnVisibleElements}
                             canvasNonce={canvasNonce}
                             selectionNonce={
                               this.state.selectionElement?.versionNonce
@@ -2732,6 +2739,15 @@ class App extends React.Component<AppProps, AppState> {
                               theme: this.state.theme,
                               ...this.getRenderOverrideConfig(),
                             }}
+                          />
+                          <AnimatedLinesCanvas
+                            appState={this.state}
+                            visibleElements={drawnVisibleElements}
+                            elementsMap={allElementsMap}
+                            runs={this.lineAnimationRuns}
+                            renderStateOf={this.getElementRenderState}
+                            ownerWindow={this.ownerWindow}
+                            scale={this.ownerWindow.devicePixelRatio}
                           />
                           {previewElement && (
                             <NewElementCanvas
@@ -5473,6 +5489,18 @@ class App extends React.Component<AppProps, AppState> {
 
       if (collaborators) {
         this.laserTrails.updateCollabTrails(collaborators);
+        // excalidraw-web: a collaborator's pointer entering a line plays it, as the user's own does
+        const present = new Set<string>();
+        for (const [id, collaborator] of collaborators) {
+          present.add(`collaborator:${id}`);
+          // a pointer that is gone is over no line, so coming back onto one enters it
+          this.lineAnimationRuns.pointerOver(
+            `collaborator:${id}`,
+            collaborator.pointer ? this.onceLineAt(collaborator.pointer) : null,
+            performance.now(),
+          );
+        }
+        this.lineAnimationRuns.forgetPointersGone("collaborator:", present);
         this.setState({ collaborators });
       }
     },
@@ -7919,8 +7947,51 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   /** excalidraw-web: the pointer left the canvas, onto the editor's UI or out of the window: no linked element is under it. */
-  private handleCanvasPointerLeave = () => {
+  private handleCanvasPointerLeave = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+  ) => {
     this.reportLinkHover(null);
+    this.lineAnimationRuns.pointerOver(
+      `self:${event.pointerId}`,
+      null,
+      performance.now(),
+    );
+  };
+
+  /**
+   * excalidraw-web: begins one run of the travelling marker on each of the
+   * lines and arrows, whatever their animation setting, for everyone this
+   * editor shows it to; `startedAtMs`, on the clock of `performance.now()`,
+   * lets a run begin in the past, as a replay's does
+   */
+  public animateLines = (
+    lineIds: readonly string[],
+    startedAtMs: number = performance.now(),
+  ): void => {
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    this.lineAnimationRuns.start(
+      lineIds.filter((id) => {
+        const element = elementsMap.get(id);
+        return element !== undefined && canAnimateLine(element);
+      }),
+      startedAtMs,
+    );
+  };
+
+  /** excalidraw-web: the visible line set to animate once that a scene point is on, if any */
+  private onceLineAt = (point: { x: number; y: number }): string | null => {
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const line = this.visibleElements.find(
+      (element) =>
+        isOnceLine(element) &&
+        hitElementItself({
+          point: pointFrom(point.x, point.y),
+          element,
+          threshold: this.getElementHitThreshold(element),
+          elementsMap,
+        }),
+    );
+    return line?.id ?? null;
   };
 
   /** excalidraw-web: tells the host's `onLinkHover` of the linked element under the pointer, when it changes. */
@@ -8196,6 +8267,13 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasPointerMove = (
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
+    // excalidraw-web: a pointer entering a line set to animate once plays it, for viewers too;
+    // each pointer on its own, so two fingers at once do not take turns entering it
+    this.lineAnimationRuns.pointerOver(
+      `self:${event.pointerId}`,
+      this.onceLineAt(viewportCoordsToSceneCoords(event, this.state)),
+      performance.now(),
+    );
     if (!this.isInteractionEnabled()) {
       if (this.isToolSupported(this.state.activeTool.type)) {
         // keep broadcasting the pointer (`props.onPointerUpdate`) between

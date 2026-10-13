@@ -24,6 +24,9 @@ import {
   invariant,
   POLYGON_MAX_SIDES,
   POLYGON_MIN_SIDES,
+  DEFAULT_LINE_ANIMATION_SPEED,
+  LINE_ANIMATION_MAX_SPEED,
+  LINE_ANIMATION_MIN_SPEED,
   FONT_SIZES,
   type StrokeWidthKey,
 } from "@excalidraw/common";
@@ -57,6 +60,8 @@ import {
 } from "@excalidraw/element";
 
 import {
+  canAnimateLine,
+  isAnimatedLine,
   isArrowElement,
   isBoundToContainer,
   isElbowArrow,
@@ -86,6 +91,7 @@ import type { LocalPoint, Radians } from "@excalidraw/math";
 
 import type {
   Arrowhead,
+  LineAnimation,
   ElementsMap,
   ExcalidrawBindableElement,
   ExcalidrawElement,
@@ -159,6 +165,8 @@ import {
   strokeVariabilityConstantIcon,
   strokeVariabilityVariableIcon,
   TextBoldIcon,
+  LineAnimateOnceIcon,
+  LineAnimateLoopIcon,
 } from "../components/icons";
 
 import { Fonts } from "../fonts";
@@ -2051,6 +2059,112 @@ export const actionChangePolygonSides = register<number>({
         max={POLYGON_MAX_SIDES}
         step={1}
         testId="polygon-sides"
+      />
+    );
+  },
+});
+
+/** excalidraw-web: a line's Animation choice, "none" for no animation */
+type LineAnimationChoice = LineAnimation | "none";
+
+/** excalidraw-web: sets how the selected lines and arrows animate: not at all, once when triggered, or in a loop */
+export const actionChangeLineAnimation = register<LineAnimationChoice>({
+  name: "changeLineAnimation",
+  label: "labels.lineAnimation",
+  trackEvent: false,
+  perform: (elements, appState, value) => ({
+    elements: changeProperty(elements, appState, (el) =>
+      !canAnimateLine(el) ||
+      el.animation === (value === "none" ? undefined : value)
+        ? el
+        : value === "none"
+        ? // forced: a field taken away is no change to newElementWith otherwise
+          newElementWith(el, { animation: undefined }, true)
+        : newElementWith(el, {
+            animation: value,
+            // a line that starts to animate takes the last speed set; one already animating keeps its own
+            animationSpeed: isAnimatedLine(el)
+              ? el.animationSpeed
+              : appState.currentItemAnimationSpeed,
+          }),
+    ),
+    appState,
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  }),
+  PanelComponent: ({ elements, app, updateData }) => (
+    <fieldset>
+      <legend>{t("labels.lineAnimation")}</legend>
+      <div className="buttonList">
+        <RadioSelection<LineAnimationChoice>
+          group="lineAnimation"
+          options={[
+            {
+              value: "none",
+              text: t("labels.lineAnimation_none"),
+              icon: StrokeWidthBaseIcon,
+              testId: "line-animation-none",
+            },
+            {
+              value: "once",
+              text: t("labels.lineAnimation_once"),
+              icon: LineAnimateOnceIcon,
+              testId: "line-animation-once",
+            },
+            {
+              value: "loop",
+              text: t("labels.lineAnimation_loop"),
+              icon: LineAnimateLoopIcon,
+              testId: "line-animation-loop",
+            },
+          ]}
+          value={getFormValue<LineAnimationChoice | null>(
+            elements,
+            app,
+            (element) =>
+              canAnimateLine(element) ? element.animation ?? "none" : null,
+            canAnimateLine,
+            null,
+          )}
+          onChange={(value) => updateData(value)}
+        />
+      </div>
+    </fieldset>
+  ),
+});
+
+/** excalidraw-web: sets how fast the marker travels on the selected animated lines, and remembers it for the next */
+export const actionChangeLineAnimationSpeed = register<number>({
+  name: "changeLineAnimationSpeed",
+  label: "labels.lineAnimationSpeed",
+  trackEvent: false,
+  perform: (elements, appState, value) => ({
+    elements: changeProperty(elements, appState, (el) =>
+      isAnimatedLine(el) ? newElementWith(el, { animationSpeed: value }) : el,
+    ),
+    appState: { ...appState, currentItemAnimationSpeed: value },
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  }),
+  PanelComponent: ({ elements, appState, app, updateData }) => {
+    const speed = getFormValue<number | null>(
+      elements,
+      app,
+      (element) =>
+        isAnimatedLine(element)
+          ? element.animationSpeed ?? DEFAULT_LINE_ANIMATION_SPEED
+          : null,
+      isAnimatedLine,
+      null,
+    );
+    return (
+      <Range
+        label={t("labels.lineAnimationSpeed")}
+        value={speed ?? appState.currentItemAnimationSpeed}
+        hasCommonValue={speed !== null}
+        onChange={updateData}
+        min={LINE_ANIMATION_MIN_SPEED}
+        max={LINE_ANIMATION_MAX_SPEED}
+        step={50}
+        testId="line-animation-speed"
       />
     );
   },

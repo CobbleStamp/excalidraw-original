@@ -466,6 +466,8 @@ export interface AppState {
   currentItemArrowType: "sharp" | "round" | "elbow";
   /** The corner count the polygon tool draws with */
   currentItemPolygonSides: number;
+  /** excalidraw-web: the speed a line takes when it is next animated */
+  currentItemAnimationSpeed: number;
   viewBackgroundColor: string;
   /** excalidraw-web: the host app's own entries in the drawing, kept in files */
   hostData: HostData;
@@ -1571,6 +1573,13 @@ export interface ExcalidrawImperativeAPI {
   setElementRenderOverrides: InstanceType<
     typeof App
   >["setElementRenderOverrides"];
+  /**
+   * excalidraw-web: plays one run of the travelling marker on each given line
+   * or arrow, whatever its animation setting; a visual only, with no
+   * document change. `startedAtMs` (on `performance.now()`'s clock) starts
+   * the run part way through.
+   */
+  animateLines: InstanceType<typeof App>["animateLines"];
   registerAction: (action: Action) => void;
   refresh: InstanceType<typeof App>["refresh"];
   setToast: InstanceType<typeof App>["setToast"];

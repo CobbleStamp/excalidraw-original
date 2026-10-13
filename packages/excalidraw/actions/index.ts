@@ -17,6 +17,8 @@ export {
   actionChangeFreedrawMode,
   actionChangeOpacity,
   actionChangePolygonSides,
+  actionChangeLineAnimation,
+  actionChangeLineAnimationSpeed,
   actionChangeFontSize,
   actionChangeFontFamily,
   actionChangeTextAlign,

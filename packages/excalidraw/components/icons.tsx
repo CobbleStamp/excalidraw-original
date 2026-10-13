@@ -1180,6 +1180,50 @@ export const StrokeWidthBaseIcon = createIcon(
   modifiedTablerIconProps,
 );
 
+/** excalidraw-web: a line with a lit dot that travels along it once */
+export const LineAnimateOnceIcon = createIcon(
+  <>
+    <path
+      d="M4.167 10h11.666"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="11.5" cy="10" r="2.25" fill="currentColor" stroke="none" />
+    <path
+      d="M6.5 7.5h2M6.5 12.5h2"
+      stroke="currentColor"
+      strokeWidth="1"
+      strokeLinecap="round"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
+/** excalidraw-web: a line with a lit dot that travels along it over and over */
+export const LineAnimateLoopIcon = createIcon(
+  <>
+    <path
+      d="M4.167 12.5h11.666"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="10" cy="12.5" r="2.25" fill="currentColor" stroke="none" />
+    <path
+      d="M6 7.5a4 3 0 0 1 8 0M14 7.5l-1.5 -1M14 7.5l1 -1.4"
+      stroke="currentColor"
+      strokeWidth="1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
 export const StrokeWidthBoldIcon = createIcon(
   <path
     d="M5 10h10"
