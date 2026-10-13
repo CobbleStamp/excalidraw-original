@@ -726,6 +726,32 @@ describe("animation the host does not allow", () => {
     });
     expect(animationLayer()).toBeNull();
   });
+
+  it("pastes no animation onto an element the host keeps still", () => {
+    const source = {
+      ...API.createElement({ type: "rectangle" }),
+      animation: "loop",
+      animationEffect: "pulse",
+    } as const;
+    const still = {
+      ...API.createElement({ type: "rectangle" }),
+      customData: { still: true },
+    };
+    API.setElements([source, still]);
+
+    API.setSelectedElements([source]);
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () =>
+      Keyboard.codeDown(CODES.C),
+    );
+    API.setSelectedElements([still]);
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () =>
+      Keyboard.codeDown(CODES.V),
+    );
+
+    const pasted = h.elements.find((element) => element.id === still.id)!;
+    expect(pasted.animation).toBeUndefined();
+    expect(pasted.animationEffect).toBeUndefined();
+  });
 });
 
 describe("animation in a saved drawing", () => {

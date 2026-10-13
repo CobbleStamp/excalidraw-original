@@ -127,7 +127,11 @@ const pulseOf = (progress: number) => {
 
 let shimmerCanvas: HTMLCanvasElement | null = null;
 
-/** Draws an element again on a canvas of its own, lights a band across it, and lays it over the layer */
+/**
+ * Lights a band across an element and lays it over the layer: the element is
+ * drawn on a canvas of its own only to shape the band (`source-in`), so its
+ * label and whatever lies above it stay as the drawn layer shows them
+ */
 const drawShimmer = (
   context: CanvasRenderingContext2D,
   element: NonDeletedExcalidrawElement,
@@ -137,8 +141,14 @@ const drawShimmer = (
 ) => {
   const { appState, scale } = props;
   shimmerCanvas ??= document.createElement("canvas");
-  shimmerCanvas.width = props.canvas.width;
-  shimmerCanvas.height = props.canvas.height;
+  // resizing reallocates the bitmap, so only when the layer's size changed
+  if (
+    shimmerCanvas.width !== props.canvas.width ||
+    shimmerCanvas.height !== props.canvas.height
+  ) {
+    shimmerCanvas.width = props.canvas.width;
+    shimmerCanvas.height = props.canvas.height;
+  }
   const own = bootstrapCanvas({
     canvas: shimmerCanvas,
     scale,
@@ -146,6 +156,8 @@ const drawShimmer = (
     normalizedHeight: appState.height,
   });
   own.clearRect(0, 0, appState.width, appState.height);
+  // the canvas is kept between frames, its compositing with it
+  own.save();
   const zoom = appState.zoom.value;
   own.scale(zoom, zoom);
   renderElement(
@@ -166,13 +178,20 @@ const drawShimmer = (
     appState.scrollX + state.offset.x,
     appState.scrollY + state.offset.y,
   );
-  own.globalCompositeOperation = "source-atop";
+  own.globalCompositeOperation = "source-in";
   const light = own.createLinearGradient(along - band, y1, along + band, y2);
   light.addColorStop(0, "rgba(255, 255, 255, 0)");
   light.addColorStop(0.5, "rgba(255, 255, 255, 0.85)");
   light.addColorStop(1, "rgba(255, 255, 255, 0)");
   own.fillStyle = light;
-  own.fillRect(x1 - band, y1 - band, x2 - x1 + 2 * band, y2 - y1 + 2 * band);
+  // the whole canvas, so no copy of the element is left outside the band
+  own.fillRect(
+    -appState.scrollX - state.offset.x,
+    -appState.scrollY - state.offset.y,
+    appState.width / zoom,
+    appState.height / zoom,
+  );
+  own.restore();
   context.save();
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.drawImage(shimmerCanvas, 0, 0);

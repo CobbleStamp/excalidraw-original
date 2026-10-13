@@ -41,6 +41,7 @@ import { CaptureUpdateAction } from "@excalidraw/element";
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
 import { paintIcon } from "../components/icons";
+import { canAnimateFor } from "../components/shapeActionPredicates";
 
 import { t } from "../i18n";
 import { getSelectedElements } from "../scene";
@@ -188,7 +189,10 @@ export const actionPasteStyles = register({
               });
             }
 
-            if (canAnimate(newElement) && canAnimate(elementStylesToCopyFrom)) {
+            if (
+              canAnimateFor(newElement, app) &&
+              canAnimate(elementStylesToCopyFrom)
+            ) {
               // excalidraw-web: an animation goes from element to element; its
               // effect only to one that offers it
               const { animation, animationSpeed, animationEffect } =
