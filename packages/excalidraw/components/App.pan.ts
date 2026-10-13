@@ -96,7 +96,8 @@ export class AppPan {
         (((event.button === POINTER_BUTTON.WHEEL ||
           isSecondary ||
           (event.button === POINTER_BUTTON.MAIN && this.spaceHeld) ||
-          isHandToolActive(app.state)) &&
+          isHandToolActive(app.state) ||
+          ("pointerType" in event && app.isPenModeFinger(event))) &&
           // reachable while non-interactive when the active tool is allowed
           // via `interaction.enabled.tools` — panning must remain gated on
           // `navigation` then
@@ -110,6 +111,13 @@ export class AppPan {
     this.secondary = isSecondary
       ? { engaged: false, nativeMenuSeen: false }
       : null;
+    // a finger's session follows that finger alone: the pen hovering does
+    // not move the canvas (a second finger's press ends the session, see
+    // `maybeCleanupAfterMissingPointerUp`)
+    const touchPointerId =
+      "pointerType" in event && event.pointerType === "touch"
+        ? event.pointerId
+        : null;
 
     // due to event.preventDefault below, container wouldn't get focus
     // automatically
@@ -133,6 +141,9 @@ export class AppPan {
     const { clientX: startX, clientY: startY } = event;
     let { clientX: lastX, clientY: lastY } = event;
     const onPointerMove = withBatchedUpdatesThrottled((event: PointerEvent) => {
+      if (touchPointerId !== null && event.pointerId !== touchPointerId) {
+        return;
+      }
       if (this.secondary && !this.secondary.engaged) {
         // a right-click until the pointer travels far enough for a drag
         if (

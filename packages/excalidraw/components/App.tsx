@@ -9208,15 +9208,8 @@ class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    const allowOnPointerDown =
-      !this.state.penMode ||
-      event.pointerType !== "touch" ||
-      this.state.activeTool.type === "selection" ||
-      this.state.activeTool.type === "lasso" ||
-      this.state.activeTool.type === "text" ||
-      this.state.activeTool.type === "image";
-
-    if (!allowOnPointerDown) {
+    // a finger that would pan but could not (navigation off) does nothing
+    if (this.isPenModeFinger(event)) {
       return;
     }
 
@@ -9539,6 +9532,18 @@ class App extends React.Component<AppProps, AppState> {
     lastPointerUp?.();
     this.missingPointerEventCleanupEmitter.trigger(event).clear();
   };
+
+  /**
+   * Whether the pointer is a finger in pen mode with a tool the pen draws
+   * with: the pen draws, the finger pans. The selection, lasso, text and
+   * image tools still take a finger as they always have.
+   */
+  isPenModeFinger = (event: { pointerType: string }) =>
+    this.state.penMode &&
+    event.pointerType === "touch" &&
+    !["selection", "lasso", "text", "image"].includes(
+      this.state.activeTool.type,
+    );
 
   private updateGestureOnPointerDown(
     event: React.PointerEvent<HTMLElement>,
