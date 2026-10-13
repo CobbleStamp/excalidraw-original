@@ -28,9 +28,9 @@ import type { GlobalPoint } from "@excalidraw/math";
 
 import { getDiamondPoints, getElementAbsoluteCoords } from "./bounds";
 import { LinearElementEditor } from "./linearElementEditor";
-import { getPolygonPoints } from "./polygon";
+import { getPolygonCornerArcs, getPolygonPoints } from "./polygon";
 import { getStickyNoteCornerRadius } from "./stickyNote";
-import { getCornerRadius } from "./utils";
+import { getCornerRadius, getPolygonCornerRadius } from "./utils";
 
 import type {
   AnimationEffect,
@@ -233,6 +233,53 @@ const roundedBoxOutline = (
   ];
 };
 
+/** A rounded corner as the editor draws it: a curve from `start` to `end`, both its handles at `corner` */
+const cornerCurve = ([start, corner, end]: readonly (readonly [
+  number,
+  number,
+])[]): [number, number][] =>
+  Array.from({ length: ARC_STEPS + 1 }, (_, i) => {
+    const t = i / ARC_STEPS;
+    // a cubic whose two middle handles are the corner
+    const ends = [(1 - t) ** 3, t ** 3];
+    const middle = 1 - ends[0] - ends[1];
+    return [
+      ends[0] * start[0] + middle * corner[0] + ends[1] * end[0],
+      ends[0] * start[1] + middle * corner[1] + ends[1] * end[1],
+    ];
+  });
+
+/** A diamond's corners as the editor rounds them: each `[start, corner, end]`, clockwise from its top */
+const diamondCornerArcs = (
+  element: ExcalidrawElement,
+): [number, number][][] => {
+  const [tx, ty, rx, ry, bx, by, lx, ly] = getDiamondPoints(element);
+  const across = getCornerRadius(Math.abs(tx - lx), element);
+  const down = getCornerRadius(Math.abs(ry - ty), element);
+  return [
+    [
+      [tx - across, ty + down],
+      [tx, ty],
+      [tx + across, ty + down],
+    ],
+    [
+      [rx - across, ry - down],
+      [rx, ry],
+      [rx - across, ry + down],
+    ],
+    [
+      [bx + across, by - down],
+      [bx, by],
+      [bx - across, by - down],
+    ],
+    [
+      [lx + across, ly + down],
+      [lx, ly],
+      [lx + across, ly - down],
+    ],
+  ];
+};
+
 /** A closed outline turned clockwise on the screen and started at its top: the top corner, or the middle of a flat top edge */
 const fromTopClockwise = (points: [number, number][]): [number, number][] => {
   const area = points.reduce((sum, [x, y], i) => {
@@ -278,6 +325,14 @@ const localOutline = (
         closed: true,
       };
     case "diamond": {
+      if (element.roundness) {
+        return {
+          points: fromTopClockwise(
+            diamondCornerArcs(element).flatMap(cornerCurve),
+          ),
+          closed: true,
+        };
+      }
       const [tx, ty, rx, ry, bx, by, lx, ly] = getDiamondPoints(element);
       return {
         points: [
@@ -300,13 +355,21 @@ const localOutline = (
         }),
         closed: true,
       };
-    case "polygon":
+    case "polygon": {
+      const corners = getPolygonPoints(element);
       return {
+        // rounded, each corner the curve the editor draws through it
         points: fromTopClockwise(
-          getPolygonPoints(element).map(([x, y]) => [x, y]),
+          element.roundness
+            ? getPolygonCornerArcs(
+                corners,
+                getPolygonCornerRadius(element, corners),
+              ).flatMap(cornerCurve)
+            : corners.map(([x, y]) => [x, y]),
         ),
         closed: true,
       };
+    }
     case "freedraw":
       return {
         points: element.points.map(([x, y]) => [x, y]),

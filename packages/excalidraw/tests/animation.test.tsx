@@ -15,6 +15,7 @@ import {
   CODES,
   ANIMATION_PAUSE_MS,
   DEFAULT_ANIMATION_SPEED,
+  ROUNDNESS,
 } from "@excalidraw/common";
 
 import {
@@ -23,7 +24,9 @@ import {
   canAnimate,
   getAnimationPath,
   getAnimationRunMs,
+  getDiamondPoints,
   getMarkerOnLine,
+  getPolygonPoints,
   getLoopProgress,
   getRunProgress,
   CaptureUpdateAction,
@@ -287,6 +290,65 @@ describe("what a shape's animation is", () => {
     expect(getTravellingPoint(polygonPath, 0.05)![0]).toBeGreaterThan(
       getTravellingPoint(polygonPath, 0)![0],
     );
+  });
+
+  it("follows a rounded diamond's and polygon's corners, as they are drawn, never reaching the sharp corners", () => {
+    const nearestTo = (
+      points: readonly (readonly [number, number])[],
+      [x, y]: readonly [number, number],
+    ) =>
+      points.reduce(
+        (nearest, [px, py]) => Math.min(nearest, Math.hypot(px - x, py - y)),
+        Infinity,
+      );
+    const rounded = { type: ROUNDNESS.PROPORTIONAL_RADIUS } as const;
+    const diamond = API.createElement({
+      type: "diamond",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      roundness: rounded,
+    });
+    const sharpDiamond = API.createElement({
+      type: "diamond",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    });
+    const polygon = API.createElement({
+      type: "polygon",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      roundness: rounded,
+    });
+    const diamondPath = getAnimationPath(diamond, arrayToMap([diamond]));
+    const polygonPath = getAnimationPath(polygon, arrayToMap([polygon]));
+
+    const [tx, ty, rx, ry, bx, by, lx, ly] = getDiamondPoints(diamond);
+    for (const corner of [
+      [tx, ty],
+      [rx, ry],
+      [bx, by],
+      [lx, ly],
+    ] as const) {
+      expect(nearestTo(diamondPath.points, corner)).toBeGreaterThan(2);
+    }
+    // a hexagon's blunt corners are cut less: the curve passes a quarter of the way to its chord
+    for (const corner of getPolygonPoints(polygon)) {
+      expect(nearestTo(polygonPath.points, corner)).toBeGreaterThan(1);
+    }
+    expect(diamondPath.length).toBeLessThan(
+      getAnimationPath(sharpDiamond, arrayToMap([sharpDiamond])).length,
+    );
+    // from the top of the rounded top corner, clockwise
+    expect(getTravellingPoint(diamondPath, 0)![0]).toBeCloseTo(tx);
+    expect(getTravellingPoint(diamondPath, 0.05)![0]).toBeGreaterThan(tx);
+    const top = Math.min(...polygonPath.points.map(([, y]) => y));
+    expect(getTravellingPoint(polygonPath, 0)![1]).toBeCloseTo(top);
   });
 
   it("works its path out again once the element is moved, resized or turned", () => {
@@ -915,7 +977,14 @@ describe("animation the host does not allow", () => {
     localStorage.clear();
     await render(
       <Excalidraw
-        canAnimateElement={(element) => element.customData?.still !== true}
+        canAnimateElement={(element, elementsMap) =>
+          element.customData?.still !== true &&
+          !(
+            element.type === "text" &&
+            element.containerId !== null &&
+            elementsMap.get(element.containerId)?.customData?.still === true
+          )
+        }
       />,
     );
     API.setAppState({ width: 800, height: 600 });
@@ -935,6 +1004,35 @@ describe("animation the host does not allow", () => {
       h.app.animateElements([still.id]);
     });
     expect(animationLayer()).toBeNull();
+  });
+
+  it("lets the host keep a label still by its container, which it looks up among the scene's elements", async () => {
+    const boxWithLabel = (still: boolean) => {
+      const rectangle = {
+        ...API.createElement({ type: "rectangle" }),
+        customData: { still },
+      };
+      const label = {
+        ...API.createElement({
+          type: "text",
+          text: "label",
+          containerId: rectangle.id,
+        }),
+        animation: "loop",
+      } as const;
+      return [
+        { ...rectangle, boundElements: [{ type: "text", id: label.id }] },
+        label,
+      ] as const;
+    };
+
+    API.setElements([...boxWithLabel(true)]);
+    await act(async () => {});
+    expect(animationLayer()).toBeNull();
+
+    API.setElements([...boxWithLabel(false)]);
+    await act(async () => {});
+    expect(animationLayer()).not.toBeNull();
   });
 
   it("pastes no animation onto an element the host keeps still", () => {

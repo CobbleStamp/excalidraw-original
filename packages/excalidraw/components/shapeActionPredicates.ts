@@ -79,7 +79,12 @@ export const canAnimateFor = (
   element: ExcalidrawElement,
   app: AppClassProperties,
 ): boolean =>
-  canAnimate(element) && (app.props.canAnimateElement?.(element) ?? true);
+  canAnimate(element) &&
+  (app.props.canAnimateElement?.(
+    element,
+    app.scene.getNonDeletedElementsMap(),
+  ) ??
+    true);
 
 /** excalidraw-web: whether an element animates and may: set to animate, by the editor's rule and the host's. */
 export const isAnimatedFor = (

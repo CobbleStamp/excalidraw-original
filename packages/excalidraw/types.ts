@@ -38,6 +38,7 @@ import type {
   ExcalidrawTextElement,
   ExcalidrawImageElement,
   StrokeVariability,
+  ElementsMap,
 } from "@excalidraw/element/types";
 
 import type {
@@ -1177,8 +1178,11 @@ export interface ExcalidrawProps {
    * same kind of link, as the editor caches its drawing per image.
    */
   linkIcon?: (element: NonDeletedExcalidrawElement) => HTMLImageElement | null;
-  /** excalidraw-web: whether the host lets an element animate, beyond the editor's own rule; absent lets every one */
-  canAnimateElement?: (element: ExcalidrawElement) => boolean;
+  /** excalidraw-web: whether the host lets an element animate, beyond the editor's own rule, with the scene's elements to look up its container; absent lets every one */
+  canAnimateElement?: (
+    element: ExcalidrawElement,
+    elementsMap: ElementsMap,
+  ) => boolean;
   /** excalidraw-web: the host's colour for an element's travelling light or pulse, `null` for the editor's own */
   animationColorOf?: (element: ExcalidrawElement) => string | null;
   /** excalidraw-web: actions the host adds to an element's context menu, after its link actions, outside view mode */
