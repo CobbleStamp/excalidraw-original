@@ -200,8 +200,8 @@ import {
   hitElementBoundText,
   hitElementBoundingBoxOnly,
   hitElementItself,
-  canAnimateLine,
-  isOnceLine,
+  isAnimatedOnce,
+  isEnteredByStroke,
   getVisibleSceneBounds,
   cropElement,
   wrapText,
@@ -275,6 +275,7 @@ import {
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 
 import type {
+  AnimationEffect,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawGenericElement,
@@ -444,7 +445,7 @@ import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 import { isOverScrollBars } from "../scene/scrollbars";
-import { LineAnimationRuns } from "../scene/lineAnimationRuns";
+import { AnimationRuns } from "../scene/animationRuns";
 import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
 import { EraserTrail } from "../eraser";
@@ -484,8 +485,9 @@ import Spinner from "./Spinner";
 import { searchItemInFocusAtom } from "./SearchMenu";
 import { isSidebarDockedAtom } from "./Sidebar/Sidebar";
 import { StaticCanvas, InteractiveCanvas } from "./canvases";
+import { canAnimateFor } from "./shapeActionPredicates";
 import NewElementCanvas from "./canvases/NewElementCanvas";
-import AnimatedLinesCanvas from "./canvases/AnimatedLinesCanvas";
+import AnimatedCanvas from "./canvases/AnimatedCanvas";
 import { isPointHittingLink } from "./hyperlink/helpers";
 import { CursorHint, CursorHints } from "./CursorHint";
 import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
@@ -838,8 +840,8 @@ class App extends React.Component<AppProps, AppState> {
 
   api: ExcalidrawImperativeAPI;
   private elementRenderOverrides: ElementRenderOverrides = new Map();
-  /** excalidraw-web: the lines playing a triggered run */
-  private lineAnimationRuns = new LineAnimationRuns();
+  /** excalidraw-web: the elements playing a triggered run */
+  private animationRuns = new AnimationRuns();
   /** offsets of `elementRenderOverrides`; keeps its identity while they don't change */
   private elementRenderOffsets: ElementRenderOffsets = new Map();
   private renderOverridesUpdatePending = false;
@@ -879,7 +881,7 @@ class App extends React.Component<AppProps, AppState> {
       setViewport: this.viewport.setViewport,
       getViewportOffsets: this.viewport.getOffsets,
       setElementRenderOverrides: this.setElementRenderOverrides,
-      animateLines: this.animateLines,
+      animateElements: this.animateElements,
       getSceneElements: this.getSceneElements,
       getAppState: () => this.state,
       getFiles: () => this.files,
@@ -2740,11 +2742,30 @@ class App extends React.Component<AppProps, AppState> {
                               ...this.getRenderOverrideConfig(),
                             }}
                           />
-                          <AnimatedLinesCanvas
+                          <AnimatedCanvas
                             appState={this.state}
                             visibleElements={drawnVisibleElements}
                             elementsMap={allElementsMap}
-                            runs={this.lineAnimationRuns}
+                            renderableElementsMap={renderableElementsMap}
+                            rc={this.rc}
+                            renderConfig={{
+                              imageCache: this.imageCache,
+                              isExporting: false,
+                              renderGrid: false,
+                              renderLinks: false,
+                              canvasBackgroundColor:
+                                this.state.viewBackgroundColor,
+                              embedsValidationStatus:
+                                this.embedsValidationStatus,
+                              elementsPendingErasure:
+                                this.elementsPendingErasure,
+                              pendingFlowchartNodes: null,
+                              theme: this.state.theme,
+                              ...this.getRenderOverrideConfig(),
+                            }}
+                            runs={this.animationRuns}
+                            canAnimate={this.canAnimateElement}
+                            colorOf={this.props.animationColorOf}
                             renderStateOf={this.getElementRenderState}
                             ownerWindow={this.ownerWindow}
                             scale={this.ownerWindow.devicePixelRatio}
@@ -5489,18 +5510,20 @@ class App extends React.Component<AppProps, AppState> {
 
       if (collaborators) {
         this.laserTrails.updateCollabTrails(collaborators);
-        // excalidraw-web: a collaborator's pointer entering a line plays it, as the user's own does
+        // excalidraw-web: a collaborator's pointer entering an element plays it, as the user's own does
         const present = new Set<string>();
         for (const [id, collaborator] of collaborators) {
           present.add(`collaborator:${id}`);
-          // a pointer that is gone is over no line, so coming back onto one enters it
-          this.lineAnimationRuns.pointerOver(
+          // a pointer that is gone is over nothing, so coming back onto an element enters it
+          this.animationRuns.pointerOver(
             `collaborator:${id}`,
-            collaborator.pointer ? this.onceLineAt(collaborator.pointer) : null,
+            collaborator.pointer
+              ? this.onceElementsAt(collaborator.pointer)
+              : [],
             performance.now(),
           );
         }
-        this.lineAnimationRuns.forgetPointersGone("collaborator:", present);
+        this.animationRuns.forgetPointersGone("collaborator:", present);
         this.setState({ collaborators });
       }
     },
@@ -7951,47 +7974,63 @@ class App extends React.Component<AppProps, AppState> {
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
     this.reportLinkHover(null);
-    this.lineAnimationRuns.pointerOver(
+    this.animationRuns.pointerOver(
       `self:${event.pointerId}`,
-      null,
+      [],
       performance.now(),
     );
   };
 
   /**
-   * excalidraw-web: begins one run of the travelling marker on each of the
-   * lines and arrows, whatever their animation setting, for everyone this
-   * editor shows it to; `startedAtMs`, on the clock of `performance.now()`,
-   * lets a run begin in the past, as a replay's does
+   * excalidraw-web: begins one run of each element's animation, whatever its
+   * animation setting, for everyone this editor shows it to, with `effect`
+   * when the element offers it and its own otherwise; `startedAtMs`, on the
+   * clock of `performance.now()`, lets a run begin in the past, as a
+   * replay's does
    */
-  public animateLines = (
-    lineIds: readonly string[],
+  public animateElements = (
+    elementIds: readonly string[],
     startedAtMs: number = performance.now(),
+    effect?: AnimationEffect,
   ): void => {
     const elementsMap = this.scene.getNonDeletedElementsMap();
-    this.lineAnimationRuns.start(
-      lineIds.filter((id) => {
+    this.animationRuns.start(
+      elementIds.filter((id) => {
         const element = elementsMap.get(id);
-        return element !== undefined && canAnimateLine(element);
+        return element !== undefined && this.canAnimateElement(element);
       }),
       startedAtMs,
+      effect,
     );
   };
 
-  /** excalidraw-web: the visible line set to animate once that a scene point is on, if any */
-  private onceLineAt = (point: { x: number; y: number }): string | null => {
+  /** excalidraw-web: whether an element may animate: by the editor's rule, and the host's when it has one */
+  private canAnimateElement = (element: ExcalidrawElement): boolean =>
+    canAnimateFor(element, this);
+
+  /**
+   * excalidraw-web: the visible elements set to animate once that a scene
+   * point enters: a line or arrow near its stroke, anything else anywhere in
+   * its box
+   */
+  private onceElementsAt = (point: { x: number; y: number }): string[] => {
     const elementsMap = this.scene.getNonDeletedElementsMap();
-    const line = this.visibleElements.find(
-      (element) =>
-        isOnceLine(element) &&
-        hitElementItself({
-          point: pointFrom(point.x, point.y),
-          element,
-          threshold: this.getElementHitThreshold(element),
-          elementsMap,
-        }),
-    );
-    return line?.id ?? null;
+    const at = pointFrom<GlobalPoint>(point.x, point.y);
+    return this.visibleElements
+      .filter(
+        (element) =>
+          isAnimatedOnce(element) &&
+          this.canAnimateElement(element) &&
+          (isEnteredByStroke(element)
+            ? hitElementItself({
+                point: at,
+                element,
+                threshold: this.getElementHitThreshold(element),
+                elementsMap,
+              })
+            : hitElementBoundingBox(at, element, elementsMap)),
+      )
+      .map((element) => element.id);
   };
 
   /** excalidraw-web: tells the host's `onLinkHover` of the linked element under the pointer, when it changes. */
@@ -8267,11 +8306,11 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasPointerMove = (
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
-    // excalidraw-web: a pointer entering a line set to animate once plays it, for viewers too;
+    // excalidraw-web: a pointer entering an element set to animate once plays it, for viewers too;
     // each pointer on its own, so two fingers at once do not take turns entering it
-    this.lineAnimationRuns.pointerOver(
+    this.animationRuns.pointerOver(
       `self:${event.pointerId}`,
-      this.onceLineAt(viewportCoordsToSceneCoords(event, this.state)),
+      this.onceElementsAt(viewportCoordsToSceneCoords(event, this.state)),
       performance.now(),
     );
     if (!this.isInteractionEnabled()) {

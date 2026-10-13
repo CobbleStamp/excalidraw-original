@@ -81,6 +81,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     followsLinkOnClick,
     onLinkHover,
     linkIcon,
+    canAnimateElement,
+    animationColorOf,
     elementContextMenuItems,
     defaultSidebarTab,
     // excalidraw-web: the host's own sections of the library panel
@@ -246,6 +248,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           followsLinkOnClick={followsLinkOnClick}
           onLinkHover={onLinkHover}
           linkIcon={linkIcon}
+          canAnimateElement={canAnimateElement}
+          animationColorOf={animationColorOf}
           elementContextMenuItems={elementContextMenuItems}
           defaultSidebarTab={defaultSidebarTab}
           // excalidraw-web: the host's own sections of the library panel

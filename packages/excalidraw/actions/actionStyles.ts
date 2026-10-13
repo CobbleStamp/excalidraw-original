@@ -17,7 +17,8 @@ import {
   getDefaultRoundnessTypeForElement,
   isFrameLikeElement,
   isArrowElement,
-  canAnimateLine,
+  animationEffectsOf,
+  canAnimate,
   isExcalidrawElement,
   getColorUpdate,
   isNonDeletedElement,
@@ -187,20 +188,26 @@ export const actionPasteStyles = register({
               });
             }
 
-            if (
-              canAnimateLine(newElement) &&
-              canAnimateLine(elementStylesToCopyFrom)
-            ) {
-              // excalidraw-web: a line's animation goes from line to line
-              const { animation, animationSpeed } = elementStylesToCopyFrom;
+            if (canAnimate(newElement) && canAnimate(elementStylesToCopyFrom)) {
+              // excalidraw-web: an animation goes from element to element; its
+              // effect only to one that offers it
+              const { animation, animationSpeed, animationEffect } =
+                elementStylesToCopyFrom;
+              const effect =
+                animationEffect !== undefined &&
+                animationEffectsOf(newElement).includes(animationEffect)
+                  ? animationEffect
+                  : undefined;
               newElement = newElementWith(
                 newElement,
                 {
                   animation,
+                  animationEffect: effect,
                   ...(animationSpeed !== undefined ? { animationSpeed } : {}),
                 },
-                // forced: a line without animation takes it away, which is no change to newElementWith otherwise
-                newElement.animation !== animation,
+                // forced: a field taken away is no change to newElementWith otherwise
+                newElement.animation !== animation ||
+                  newElement.animationEffect !== effect,
               );
             }
 

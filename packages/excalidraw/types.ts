@@ -466,7 +466,7 @@ export interface AppState {
   currentItemArrowType: "sharp" | "round" | "elbow";
   /** The corner count the polygon tool draws with */
   currentItemPolygonSides: number;
-  /** excalidraw-web: the speed a line takes when it is next animated */
+  /** excalidraw-web: the speed an element takes when it is next animated */
   currentItemAnimationSpeed: number;
   viewBackgroundColor: string;
   /** excalidraw-web: the host app's own entries in the drawing, kept in files */
@@ -1177,6 +1177,10 @@ export interface ExcalidrawProps {
    * same kind of link, as the editor caches its drawing per image.
    */
   linkIcon?: (element: NonDeletedExcalidrawElement) => HTMLImageElement | null;
+  /** excalidraw-web: whether the host lets an element animate, beyond the editor's own rule; absent lets every one */
+  canAnimateElement?: (element: ExcalidrawElement) => boolean;
+  /** excalidraw-web: the host's colour for an element's travelling light or pulse, `null` for the editor's own */
+  animationColorOf?: (element: ExcalidrawElement) => string | null;
   /** excalidraw-web: actions the host adds to an element's context menu, after its link actions, outside view mode */
   elementContextMenuItems?: readonly Action[];
   /**
@@ -1574,12 +1578,13 @@ export interface ExcalidrawImperativeAPI {
     typeof App
   >["setElementRenderOverrides"];
   /**
-   * excalidraw-web: plays one run of the travelling marker on each given line
-   * or arrow, whatever its animation setting; a visual only, with no
-   * document change. `startedAtMs` (on `performance.now()`'s clock) starts
-   * the run part way through.
+   * excalidraw-web: plays one run of each given element's animation,
+   * whatever its animation setting, with `effect` when the element offers
+   * it and its own otherwise; a visual only, with no document change.
+   * `startedAtMs` (on `performance.now()`'s clock) starts the run part way
+   * through.
    */
-  animateLines: InstanceType<typeof App>["animateLines"];
+  animateElements: InstanceType<typeof App>["animateElements"];
   registerAction: (action: Action) => void;
   refresh: InstanceType<typeof App>["refresh"];
   setToast: InstanceType<typeof App>["setToast"];

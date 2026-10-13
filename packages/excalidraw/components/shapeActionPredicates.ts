@@ -11,8 +11,9 @@ import {
   isTextElement,
   hasStrokeColor,
   toolIsArrow,
-  canAnimateLine,
-  isAnimatedLine,
+  animationEffectsOf,
+  canAnimate,
+  isAnimated,
 } from "@excalidraw/element";
 
 import type {
@@ -71,6 +72,21 @@ export const takesStrokeColor = (
 ): boolean =>
   hasStrokeColor(element.type) ||
   app.props.takesStrokeColor?.(element) === true;
+
+/** excalidraw-web: whether an element may animate: by the editor's rule, and the host's when it has one. */
+export const canAnimateFor = (
+  element: ExcalidrawElement,
+  app: AppClassProperties,
+): boolean =>
+  canAnimate(element) && (app.props.canAnimateElement?.(element) ?? true);
+
+/** excalidraw-web: whether some elements are given and all offer the same effects: all lines and arrows, or none of them. */
+const offerSameEffects = (elements: readonly ExcalidrawElement[]): boolean =>
+  elements.length > 0 &&
+  elements.every(
+    (element) =>
+      animationEffectsOf(element)[0] === animationEffectsOf(elements[0])[0],
+  );
 
 export const canChangeBackgroundColor = (
   appState: UIAppState,
@@ -158,9 +174,16 @@ export const getShapeActionPredicates = (
     polygonSides: forToolOrSelection((type) => type === "polygon"),
     arrowType: forToolOrSelection(toolIsArrow),
     arrowheads: forToolOrSelection(canHaveArrowheads),
-    // excalidraw-web: a new line has no animation, so these follow the selection only
-    lineAnimation: targetElements.some(canAnimateLine),
-    lineAnimationSpeed: targetElements.some(isAnimatedLine),
+    // excalidraw-web: a new element has no animation, so these follow the selection only
+    animation: targetElements.some((element) => canAnimateFor(element, app)),
+    animationEffect: offerSameEffects(
+      targetElements.filter(
+        (element) => isAnimated(element) && canAnimateFor(element, app),
+      ),
+    ),
+    animationSpeed: targetElements.some(
+      (element) => isAnimated(element) && canAnimateFor(element, app),
+    ),
 
     // text
     text: activeToolType === "text" || targetElements.some(isTextElement),

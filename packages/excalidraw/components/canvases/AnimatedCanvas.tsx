@@ -1,43 +1,41 @@
 /**
- * excalidraw-web: the board's layer for animated lines. It sits over the
- * drawn elements and, while some visible line loops or some line plays a
- * triggered run, and the system does not ask for reduced motion, redraws
- * their travelling markers every frame; with nothing to animate it is not
- * there at all.
+ * excalidraw-web: the board's layer for animated elements. It sits over the
+ * drawn elements and, while some visible element loops or some element plays
+ * a triggered run, and the system does not ask for reduced motion, redraws
+ * their animations every frame; with nothing to animate it is not there at
+ * all.
  */
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import {
-  canAnimateLine,
-  getLineRunMs,
+  animationEffectOf,
+  getAnimationRunMs,
   getLoopProgress,
   getRunProgress,
-  isLoopingLine,
+  isLooping,
 } from "@excalidraw/element";
 
 import type {
-  ElementsMap,
-  ExcalidrawLinearElement,
+  ExcalidrawElement,
   NonDeletedExcalidrawElement,
+  NonDeletedSceneElementsMap,
 } from "@excalidraw/element/types";
 
-import { renderAnimatedLinesScene } from "../../renderer/animatedLinesScene";
+import { renderAnimatedScene } from "../../renderer/animatedScene";
 
 import type {
-  AnimatedLinesSceneProps,
-  LineMarkerToDraw,
-} from "../../renderer/animatedLinesScene";
-import type { LineAnimationRuns } from "../../scene/lineAnimationRuns";
+  AnimatedSceneProps,
+  AnimationToDraw,
+} from "../../renderer/animatedScene";
+import type { AnimationRuns } from "../../scene/animationRuns";
 
-type AnimatedLinesCanvasProps = {
-  appState: AnimatedLinesSceneProps["appState"];
+type AnimatedCanvasProps = Omit<AnimatedSceneProps, "canvas" | "animations"> & {
   visibleElements: readonly NonDeletedExcalidrawElement[];
-  elementsMap: ElementsMap;
-  runs: LineAnimationRuns;
-  renderStateOf: AnimatedLinesSceneProps["renderStateOf"];
+  runs: AnimationRuns;
+  /** whether the host lets an element animate, beyond the editor's own rule */
+  canAnimate: (element: ExcalidrawElement) => boolean;
   /** the window the editor is in, whose frames and motion setting count */
   ownerWindow: Window;
-  scale: number;
 };
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -59,47 +57,56 @@ const usePrefersReducedMotion = (ownerWindow: Window): boolean => {
   return reduced;
 };
 
-/** The markers to draw at `timeMs`: each looping line's, and each triggered run's, ending runs that are over */
-const markersAt = (
-  loops: readonly ExcalidrawLinearElement[],
-  runs: LineAnimationRuns,
-  elementsMap: ElementsMap,
+/** The animations to draw at `timeMs`: each looping element's, and each triggered run's, ending runs that are over */
+const animationsAt = (
+  loops: readonly NonDeletedExcalidrawElement[],
+  runs: AnimationRuns,
+  elementsMap: NonDeletedSceneElementsMap,
+  canAnimate: (element: ExcalidrawElement) => boolean,
   timeMs: number,
-): LineMarkerToDraw[] => {
-  const markers: LineMarkerToDraw[] = [];
-  for (const line of loops) {
-    const progress = getLoopProgress(getLineRunMs(line, elementsMap), timeMs);
+): AnimationToDraw[] => {
+  const animations: AnimationToDraw[] = [];
+  for (const element of loops) {
+    const effect = animationEffectOf(element);
+    const progress = getLoopProgress(
+      getAnimationRunMs(element, elementsMap, effect),
+      timeMs,
+    );
     if (progress !== null) {
-      markers.push({ line, progress });
+      animations.push({ element, effect, progress });
     }
   }
-  for (const [id, startedMs] of [...runs.current()]) {
-    const element = elementsMap.get(id);
-    const line =
-      element && !element.isDeleted && canAnimateLine(element) ? element : null;
-    const progress = line
-      ? getRunProgress(getLineRunMs(line, elementsMap), timeMs - startedMs)
-      : null;
-    if (line === null || progress === null) {
+  for (const [id, run] of [...runs.current()]) {
+    const found = elementsMap.get(id);
+    const element = found && canAnimate(found) ? found : null;
+    const effect = element ? animationEffectOf(element, run.effect) : null;
+    const progress =
+      element && effect
+        ? getRunProgress(
+            getAnimationRunMs(element, elementsMap, effect),
+            timeMs - run.startedMs,
+          )
+        : null;
+    if (element === null || effect === null || progress === null) {
       runs.finish(id);
-    } else if (!isLoopingLine(line)) {
-      // a looping line's own marker already runs
-      markers.push({ line, progress });
+    } else if (!isLooping(element)) {
+      // a looping element already runs its own
+      animations.push({ element, effect, progress });
     }
   }
-  return markers;
+  return animations;
 };
 
-/** Draws the travelling markers of looping lines and triggered runs, frame by frame */
-const AnimatedLinesCanvas = (props: AnimatedLinesCanvasProps) => {
+/** Draws the animations of looping elements and triggered runs, frame by frame */
+const AnimatedCanvas = (props: AnimatedCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [, runsChanged] = useReducer((count: number) => count + 1, 0);
   const { runs, ownerWindow } = props;
   useEffect(() => runs.subscribe(runsChanged), [runs]);
-  // lines change in place as they are edited, so they are found every render
+  // elements change in place as they are edited, so they are found every render
   const loops = props.visibleElements.filter(
-    isLoopingLine,
-  ) as ExcalidrawLinearElement[];
+    (element) => isLooping(element) && props.canAnimate(element),
+  );
   const reducedMotion = usePrefersReducedMotion(ownerWindow);
   const running =
     (loops.length > 0 || runs.current().size > 0) && !reducedMotion;
@@ -115,17 +122,18 @@ const AnimatedLinesCanvas = (props: AnimatedLinesCanvasProps) => {
       timeMs: number,
     ) {
       const scene = latest.current;
-      const markers = markersAt(
+      const animations = animationsAt(
         scene.loops,
         scene.runs,
         scene.elementsMap,
+        scene.canAnimate,
         timeMs,
       );
       if (canvasRef.current) {
-        renderAnimatedLinesScene({
+        renderAnimatedScene({
           ...scene,
           canvas: canvasRef.current,
-          markers,
+          animations,
         });
       }
       frame = ownerWindow.requestAnimationFrame(draw);
@@ -138,7 +146,7 @@ const AnimatedLinesCanvas = (props: AnimatedLinesCanvasProps) => {
   }
   return (
     <canvas
-      className="excalidraw__canvas animated-lines"
+      className="excalidraw__canvas animated-elements"
       style={{
         width: props.appState.width,
         height: props.appState.height,
@@ -151,4 +159,4 @@ const AnimatedLinesCanvas = (props: AnimatedLinesCanvasProps) => {
   );
 };
 
-export default AnimatedLinesCanvas;
+export default AnimatedCanvas;

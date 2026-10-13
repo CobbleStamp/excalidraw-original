@@ -82,7 +82,7 @@ export * from "./groups";
 export * from "./heading";
 export * from "./image";
 export * from "./linearElementEditor";
-export * from "./lineAnimation";
+export * from "./elementAnimation";
 export * from "./mutateElement";
 export * from "./newElement";
 export * from "./positionElementsOnGrid";
