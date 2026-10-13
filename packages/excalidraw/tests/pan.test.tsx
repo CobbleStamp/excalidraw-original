@@ -11,6 +11,7 @@ import {
 import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
+import { Pointer, UI } from "./helpers/ui";
 import { GlobalTestState, render } from "./test-utils";
 
 const { h } = window;
@@ -212,5 +213,91 @@ describe("secondary-button pan", () => {
     fireEvent.contextMenu(canvas(), at(100, 100));
     fireEvent.pointerUp(window, { ...at(100, 100), buttons: 0 });
     expect(h.state.contextMenu).toBe(null);
+  });
+});
+
+describe("one-finger pan in pen mode", () => {
+  const touch = (pointerId: number, clientX: number, clientY: number) => ({
+    pointerId,
+    pointerType: "touch",
+    button: POINTER_BUTTON.MAIN,
+    buttons: 1,
+    clientX,
+    clientY,
+  });
+
+  beforeEach(async () => {
+    await render(<Excalidraw />);
+    API.setAppState({ penMode: true, penDetected: true });
+  });
+
+  it.each(["freedraw", "rectangle", "arrow", "eraser"] as const)(
+    "a finger pans and does not draw with the %s tool",
+    (type) => {
+      UI.clickTool(type);
+      fireEvent.pointerDown(canvas(), touch(1, 100, 100));
+      const start = getViewport();
+      fireEvent.pointerMove(canvas(), touch(1, 110, 120));
+      expect(getViewport()).toEqual({
+        ...start,
+        scrollX: start.scrollX + 10 / start.zoom,
+        scrollY: start.scrollY + 20 / start.zoom,
+      });
+      fireEvent.pointerUp(canvas(), { ...touch(1, 110, 120), buttons: 0 });
+      expect(h.elements).toHaveLength(0);
+      expect(h.state.activeTool.type).toBe(type);
+    },
+  );
+
+  it("the pen still draws", () => {
+    UI.clickTool("freedraw");
+    const pen = new Pointer("pen", 2);
+    pen.down(40, -20);
+    pen.up(50, 10);
+    expect(h.elements).toHaveLength(1);
+    expect(h.elements[0].type).toBe("freedraw");
+  });
+
+  it("a finger still selects with the selection tool", () => {
+    UI.clickTool("selection");
+    fireEvent.pointerDown(canvas(), touch(1, 100, 100));
+    expect(h.state.cursorButton).toBe("down");
+    fireEvent.pointerUp(canvas(), { ...touch(1, 100, 100), buttons: 0 });
+  });
+
+  it("a finger does not pan outside pen mode", () => {
+    API.setAppState({ penMode: false });
+    UI.clickTool("rectangle");
+    const start = getViewport();
+    fireEvent.pointerDown(canvas(), touch(1, 100, 100));
+    fireEvent.pointerMove(canvas(), touch(1, 110, 120));
+    fireEvent.pointerUp(canvas(), { ...touch(1, 110, 120), buttons: 0 });
+    expect(getViewport()).toEqual(start);
+    expect(h.elements).toHaveLength(1);
+  });
+
+  it("the pen hovering does not move a finger's pan, and a second finger ends it", () => {
+    UI.clickTool("freedraw");
+    fireEvent.pointerDown(canvas(), touch(1, 100, 100));
+    const start = getViewport();
+    fireEvent.pointerMove(window, {
+      ...touch(3, 400, 400),
+      pointerType: "pen",
+    });
+    expect(getViewport()).toEqual(start);
+
+    fireEvent.pointerDown(canvas(), touch(2, 200, 100));
+    expect(h.app.pan.isActive()).toBe(false);
+    fireEvent.pointerUp(canvas(), { ...touch(2, 200, 100), buttons: 0 });
+    fireEvent.pointerUp(canvas(), { ...touch(1, 100, 100), buttons: 0 });
+    expect(h.elements).toHaveLength(0);
+  });
+
+  it("a cancelled finger ends its pan", () => {
+    UI.clickTool("freedraw");
+    fireEvent.pointerDown(canvas(), touch(1, 100, 100));
+    expect(h.app.pan.isActive()).toBe(true);
+    fireEvent.pointerCancel(canvas(), touch(1, 100, 100));
+    expect(h.app.pan.isActive()).toBe(false);
   });
 });
