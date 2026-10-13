@@ -420,6 +420,11 @@ import {
   isActiveToolNonLinearSnappable,
   snapNewElement,
   snapResizingElements,
+  snapNewElementToSquare,
+  snapResizingToSquare,
+  isSquareSnapActive,
+  isSquareSnapNearer,
+  getSizeSnapLine,
   isSnappingEnabled,
   getVisibleGaps,
   getReferenceSnapPoints,
@@ -13930,7 +13935,11 @@ class App extends React.Component<AppProps, AppState> {
 
     this.maybeCacheReferenceSnapPoints(event, [newElement]);
 
-    const { snapOffset, snapLines } = snapNewElement(
+    const dragOffset: { x: number; y: number } = {
+      x: gridX - pointerDownState.originInGrid.x,
+      y: gridY - pointerDownState.originInGrid.y,
+    };
+    const objectSnap: ReturnType<typeof snapNewElement> = snapNewElement(
       newElement,
       this,
       event,
@@ -13942,19 +13951,27 @@ class App extends React.Component<AppProps, AppState> {
           pointerDownState.originInGrid.y +
           (this.state.originSnapOffset?.y ?? 0),
       },
-      {
-        x: gridX - pointerDownState.originInGrid.x,
-        y: gridY - pointerDownState.originInGrid.y,
-      },
+      dragOffset,
       this.scene.getNonDeletedElementsMap(),
     );
+    // Shift already keeps the sides equal
+    const squareSnapOffset: { x: number; y: number } | null =
+      shouldMaintainAspectRatio(event)
+        ? null
+        : snapNewElementToSquare(
+            newElement,
+            this,
+            event,
+            dragOffset,
+            shouldResizeFromCenter(event),
+          );
+    const { snapOffset, snapLines } =
+      squareSnapOffset && isSquareSnapNearer(squareSnapOffset, objectSnap)
+        ? { snapOffset: squareSnapOffset, snapLines: [] }
+        : objectSnap;
 
     gridX += snapOffset.x;
     gridY += snapOffset.y;
-
-    this.setState({
-      snapLines,
-    });
 
     if (!isBindingElement(newElement)) {
       dragNewElement({
@@ -13983,6 +14000,19 @@ class App extends React.Component<AppProps, AppState> {
 
     this.setState({
       newElement,
+      // until it has both sides, the shape has no size to show
+      snapLines:
+        isSquareSnapActive(newElement, this, event) &&
+        newElement.width !== 0 &&
+        newElement.height !== 0
+          ? [
+              ...snapLines,
+              getSizeSnapLine(
+                newElement,
+                this.scene.getNonDeletedElementsMap(),
+              ),
+            ]
+          : snapLines,
     });
 
     // highlight elements that are to be added to frames on frames creation
@@ -14154,6 +14184,23 @@ class App extends React.Component<AppProps, AppState> {
       });
     });
 
+    // images are proportional by default, and so is a sticky note's corner
+    // (its label's font ceiling scales with it); Shift frees them. A note's
+    // edges stay free by default — Shift constrains them like any shape.
+    const proportionalByDefault =
+      selectedElements.some((element) => isImageElement(element)) ||
+      (selectedElements.length === 1 &&
+        isStickyNoteElement(selectedElements[0]) &&
+        typeof transformHandleType === "string" &&
+        transformHandleType.length === 2);
+    const keepsAspectRatio: boolean = proportionalByDefault
+      ? !shouldMaintainAspectRatio(event)
+      : shouldMaintainAspectRatio(event);
+    const originalElement: NonDeleted<ExcalidrawElement> | undefined =
+      selectedElements.length === 1
+        ? pointerDownState.originalElements.get(selectedElements[0].id)
+        : undefined;
+
     // check needed for avoiding flickering when a key gets pressed
     // during dragging
     if (!this.state.selectedElementsAreBeingDragged) {
@@ -14172,14 +14219,31 @@ class App extends React.Component<AppProps, AppState> {
 
       this.maybeCacheReferenceSnapPoints(event, selectedElements);
 
-      const { snapOffset, snapLines } = snapResizingElements(
-        selectedElements,
-        getSelectedElements(originalElements, this.state),
-        this,
-        event,
-        dragOffset,
-        transformHandleType,
-      );
+      const objectSnap: ReturnType<typeof snapResizingElements> =
+        snapResizingElements(
+          selectedElements,
+          getSelectedElements(originalElements, this.state),
+          this,
+          event,
+          dragOffset,
+          transformHandleType,
+        );
+      // a kept aspect ratio leaves no side free to snap
+      const squareSnapOffset: { x: number; y: number } | null =
+        originalElement && transformHandleType && !keepsAspectRatio
+          ? snapResizingToSquare(
+              originalElement,
+              this,
+              event,
+              { x: resizeX, y: resizeY },
+              transformHandleType,
+              shouldResizeFromCenter(event),
+            )
+          : null;
+      const { snapOffset, snapLines } =
+        squareSnapOffset && isSquareSnapNearer(squareSnapOffset, objectSnap)
+          ? { snapOffset: squareSnapOffset, snapLines: [] }
+          : objectSnap;
 
       resizeX += snapOffset.x;
       resizeY += snapOffset.y;
@@ -14189,16 +14253,6 @@ class App extends React.Component<AppProps, AppState> {
       });
     }
 
-    // images are proportional by default, and so is a sticky note's corner
-    // (its label's font ceiling scales with it); Shift frees them. A note's
-    // edges stay free by default — Shift constrains them like any shape.
-    const proportionalByDefault =
-      selectedElements.some((element) => isImageElement(element)) ||
-      (selectedElements.length === 1 &&
-        isStickyNoteElement(selectedElements[0]) &&
-        typeof transformHandleType === "string" &&
-        transformHandleType.length === 2);
-
     if (
       transformElements(
         pointerDownState.originalElements,
@@ -14207,9 +14261,7 @@ class App extends React.Component<AppProps, AppState> {
         this.scene,
         shouldRotateWithDiscreteAngle(event),
         shouldResizeFromCenter(event),
-        proportionalByDefault
-          ? !shouldMaintainAspectRatio(event)
-          : shouldMaintainAspectRatio(event),
+        keepsAspectRatio,
         resizeX,
         resizeY,
         pointerDownState.resize.center.x,
@@ -14238,9 +14290,23 @@ class App extends React.Component<AppProps, AppState> {
         });
       });
 
-      this.setState({
+      const resizedElement: NonDeletedExcalidrawElement = selectedElements[0];
+      const showsSize: boolean =
+        selectedElements.length === 1 &&
+        transformHandleType !== "rotation" &&
+        isSquareSnapActive(resizedElement, this, event);
+      this.setState((prevState) => ({
         elementsToHighlight: [...elementsToHighlight],
-      });
+        snapLines: showsSize
+          ? [
+              ...prevState.snapLines.filter((line) => line.type !== "size"),
+              getSizeSnapLine(
+                resizedElement,
+                this.scene.getNonDeletedElementsMap(),
+              ),
+            ]
+          : prevState.snapLines,
+      }));
 
       return true;
     }

@@ -2,7 +2,7 @@ import { pointFrom, type GlobalPoint, type LocalPoint } from "@excalidraw/math";
 
 import { THEME } from "@excalidraw/common";
 
-import type { PointSnapLine, PointerSnapLine } from "../snapping";
+import type { PointSnapLine, PointerSnapLine, SizeSnapLine } from "../snapping";
 import type { InteractiveCanvasAppState } from "../types";
 
 const SNAP_COLOR_LIGHT = "#ff6b6b";
@@ -12,6 +12,12 @@ const SNAP_COLOR_DARK = "#ff9090";
 const SNAP_COLOR_DARK_ZEN = "#da5b5b";
 const SNAP_WIDTH = 1;
 const SNAP_CROSS_SIZE = 2;
+// the size label, in screen pixels
+const SIZE_LABEL_FONT_SIZE = 11;
+const SIZE_LABEL_PADDING_X = 5;
+const SIZE_LABEL_HEIGHT = 18;
+const SIZE_LABEL_GAP = 8;
+const SIZE_LABEL_TEXT_COLOR = "#ffffff";
 
 export const renderSnaps = (
   context: CanvasRenderingContext2D,
@@ -58,9 +64,48 @@ export const renderSnaps = (
       context.lineWidth = snapWidth;
       context.strokeStyle = snapColor;
       drawPointsSnapLine(snapLine, context, appState);
+    } else if (snapLine.type === "size") {
+      drawSizeLabel(snapLine, snapColor, context, appState);
     }
   }
 
+  context.restore();
+};
+
+/** "width × height" in a pill centred below the shape, the same size on
+    screen at any zoom */
+const drawSizeLabel = (
+  sizeSnapLine: SizeSnapLine,
+  color: string,
+  context: CanvasRenderingContext2D,
+  appState: InteractiveCanvasAppState,
+) => {
+  const zoom: number = appState.zoom.value;
+  const text: string = `${Math.round(sizeSnapLine.width)} × ${Math.round(
+    sizeSnapLine.height,
+  )}`;
+  const [x, y]: GlobalPoint = sizeSnapLine.point;
+
+  context.save();
+  context.font = `${SIZE_LABEL_FONT_SIZE / zoom}px sans-serif`;
+  const width: number =
+    context.measureText(text).width + (2 * SIZE_LABEL_PADDING_X) / zoom;
+  const height: number = SIZE_LABEL_HEIGHT / zoom;
+  const top: number = y + SIZE_LABEL_GAP / zoom;
+
+  context.fillStyle = color;
+  context.beginPath();
+  if (context.roundRect) {
+    context.roundRect(x - width / 2, top, width, height, height / 4);
+  } else {
+    context.rect(x - width / 2, top, width, height);
+  }
+  context.fill();
+
+  context.fillStyle = SIZE_LABEL_TEXT_COLOR;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, x, top + height / 2);
   context.restore();
 };
 
