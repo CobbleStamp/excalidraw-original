@@ -12,6 +12,7 @@ import {
   getCommonBounds,
   getDraggedElementsBounds,
   getElementAbsoluteCoords,
+  getElementBounds,
 } from "@excalidraw/element";
 import { isBoundToContainer } from "@excalidraw/element";
 
@@ -22,10 +23,13 @@ import {
   getVisibleAndNonSelectedElements,
 } from "@excalidraw/element";
 
-import type { InclusiveRange } from "@excalidraw/math";
+import type { InclusiveRange, Radians } from "@excalidraw/math";
 
 import type { Bounds } from "@excalidraw/common";
-import type { MaybeTransformHandleType } from "@excalidraw/element";
+import type {
+  MaybeTransformHandleType,
+  TransformHandleType,
+} from "@excalidraw/element";
 import type {
   ElementsMap,
   ExcalidrawElement,
@@ -115,7 +119,21 @@ export type GapSnapLine = {
   points: PointPair;
 };
 
-export type SnapLine = PointSnapLine | GapSnapLine | PointerSnapLine;
+/** the size of the shape being drawn or resized, shown below it while
+    snapping is on */
+export type SizeSnapLine = {
+  type: "size";
+  /** the middle of the shape's bottom edge */
+  point: GlobalPoint;
+  width: number;
+  height: number;
+};
+
+export type SnapLine =
+  | PointSnapLine
+  | GapSnapLine
+  | PointerSnapLine
+  | SizeSnapLine;
 
 // -----------------------------------------------------------------------------
 
@@ -1412,4 +1430,174 @@ export const isActiveToolNonLinearSnappable = (
     activeToolType === TOOL_TYPE.image ||
     activeToolType === TOOL_TYPE.text
   );
+};
+
+// -----------------------------------------------------------------------------
+// square snap: a rectangle, diamond or ellipse whose sides are nearly equal
+// snaps to equal sides, with snapping's own on/off rule and distance
+
+/** Whether an element snaps to equal sides, and shows its size, while drawn
+    or resized: a rectangle to a square, a diamond to equal sides, an ellipse
+    to a circle, whenever snapping is on. */
+export const isSquareSnapActive = (
+  element: NonDeletedExcalidrawElement,
+  app: AppClassProperties,
+  event: KeyboardModifiersObject,
+): boolean =>
+  (element.type === "rectangle" ||
+    element.type === "diamond" ||
+    element.type === "ellipse") &&
+  isSnappingEnabled({ event, selectedElements: [element], app });
+
+const withSignOf = (magnitude: number, value: number): number =>
+  value < 0 ? -magnitude : magnitude;
+
+/**
+ * Levels a box's width and height when they are within `snapDistance` of each
+ * other, moving only its free sides (when both are free, they meet halfway).
+ * Returns how much the width and height change, or null when they are too far
+ * apart to snap. Flipped (negative) sides stay flipped.
+ */
+export const getSquareSnap = (
+  width: number,
+  height: number,
+  free: "width" | "height" | "both",
+  snapDistance: number,
+): Vector2D | null => {
+  if (Math.abs(Math.abs(width) - Math.abs(height)) > snapDistance) {
+    return null;
+  }
+  const side: number =
+    free === "width"
+      ? Math.abs(height)
+      : free === "height"
+      ? Math.abs(width)
+      : (Math.abs(width) + Math.abs(height)) / 2;
+  return {
+    x: free === "height" ? 0 : withSignOf(side, width) - width,
+    y: free === "width" ? 0 : withSignOf(side, height) - height,
+  };
+};
+
+/**
+ * Returns how far to move the pointer resizing a single rectangle, diamond or
+ * ellipse by one of its handles so that its sides come out equal, or null when
+ * snapping is off or the sides are not within the snap distance. The pointer
+ * is the handle's position, in scene coordinates.
+ */
+export const snapResizingToSquare = (
+  originalElement: NonDeletedExcalidrawElement,
+  app: AppClassProperties,
+  event: KeyboardModifiersObject,
+  pointer: Vector2D,
+  transformHandle: TransformHandleType,
+  fromCenter: boolean,
+): Vector2D | null => {
+  if (
+    transformHandle === "rotation" ||
+    !isSquareSnapActive(originalElement, app, event)
+  ) {
+    return null;
+  }
+  const { x, y, width, height, angle } = originalElement;
+  const center: GlobalPoint = pointFrom<GlobalPoint>(
+    x + width / 2,
+    y + height / 2,
+  );
+  // the pointer in the element's own (unrotated) frame
+  const [localX, localY]: GlobalPoint = pointRotateRads(
+    pointFrom<GlobalPoint>(pointer.x, pointer.y),
+    center,
+    -angle as Radians,
+  );
+  // from the center, a side moves twice as far as the pointer
+  const factor: number = fromCenter ? 2 : 1;
+  const east: boolean = transformHandle.includes("e");
+  const west: boolean = transformHandle.includes("w");
+  const south: boolean = transformHandle.includes("s");
+  const north: boolean = transformHandle.includes("n");
+  const nextWidth: number = east
+    ? factor * (localX - (fromCenter ? center[0] : x))
+    : west
+    ? factor * ((fromCenter ? center[0] : x + width) - localX)
+    : width;
+  const nextHeight: number = south
+    ? factor * (localY - (fromCenter ? center[1] : y))
+    : north
+    ? factor * ((fromCenter ? center[1] : y + height) - localY)
+    : height;
+  const snap: Vector2D | null = getSquareSnap(
+    nextWidth,
+    nextHeight,
+    (east || west) && (north || south)
+      ? "both"
+      : east || west
+      ? "width"
+      : "height",
+    getSnapDistance(app.state.zoom.value),
+  );
+  if (!snap) {
+    return null;
+  }
+  const [offsetX, offsetY]: GlobalPoint = pointRotateRads(
+    pointFrom<GlobalPoint>(
+      ((west ? -1 : 1) * snap.x) / factor,
+      ((north ? -1 : 1) * snap.y) / factor,
+    ),
+    pointFrom<GlobalPoint>(0, 0),
+    angle,
+  );
+  return { x: offsetX, y: offsetY };
+};
+
+/**
+ * Returns how far to move the pointer drawing a new rectangle, diamond or
+ * ellipse so that its sides come out equal, or null when snapping is off or
+ * the sides are not within the snap distance. `dragOffset` is the pointer's
+ * distance from where the drawing started, `fromCenter` whether the shape
+ * grows both ways from there.
+ */
+export const snapNewElementToSquare = (
+  newElement: NonDeletedExcalidrawElement,
+  app: AppClassProperties,
+  event: KeyboardModifiersObject,
+  dragOffset: Vector2D,
+  fromCenter: boolean,
+): Vector2D | null => {
+  if (!isSquareSnapActive(newElement, app, event)) {
+    return null;
+  }
+  // drawn from the center, both sides double alike: the box is square exactly
+  // when the drag is, and its sides differ twice as much
+  return getSquareSnap(
+    dragOffset.x,
+    dragOffset.y,
+    "both",
+    getSnapDistance(app.state.zoom.value) / (fromCenter ? 2 : 1),
+  );
+};
+
+/** Picks between an object snap and a square snap of the same pointer: the
+    one that moves it less, so neither overrides a nearer one. */
+export const isSquareSnapNearer = (
+  squareSnapOffset: Vector2D,
+  objectSnap: { snapOffset: Vector2D; snapLines: SnapLine[] },
+): boolean =>
+  objectSnap.snapLines.length === 0 ||
+  Math.hypot(squareSnapOffset.x, squareSnapOffset.y) <
+    Math.hypot(objectSnap.snapOffset.x, objectSnap.snapOffset.y);
+
+/** The size label of a shape being drawn or resized, below the middle of its
+    bottom edge. */
+export const getSizeSnapLine = (
+  element: ExcalidrawElement,
+  elementsMap: ElementsMap,
+): SizeSnapLine => {
+  const [minX, , maxX, maxY] = getElementBounds(element, elementsMap);
+  return {
+    type: "size",
+    point: pointFrom((minX + maxX) / 2, maxY),
+    width: element.width,
+    height: element.height,
+  };
 };
