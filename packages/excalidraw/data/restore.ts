@@ -44,6 +44,8 @@ import {
   projectFixedPointOntoDiagonal,
   isNonDeletedElement,
   normalizePolygonSides,
+  normalizeLineAnimationSpeed,
+  restoreLineAnimation,
 } from "@excalidraw/element";
 import { normalizeFixedPoint } from "@excalidraw/element";
 import {
@@ -683,7 +685,7 @@ export const restoreElement = (
         ...getSizeFromPoints(points),
       });
 
-      return handleOversizedLinearElements(restoredLine);
+      return handleOversizedLinearElements(restoreLineAnimation(restoredLine));
     case "arrow": {
       const startArrowhead = normalizeArrowhead(element.startArrowhead);
       const endArrowhead =
@@ -750,7 +752,9 @@ export const restoreElement = (
         ),
       };
 
-      return handleOversizedLinearElements(normalizedRestoredElement);
+      return handleOversizedLinearElements(
+        restoreLineAnimation(normalizedRestoredElement),
+      );
     }
 
     // generic elements
@@ -1430,6 +1434,9 @@ export const restoreAppState = (
     ),
     currentItemPolygonSides: normalizePolygonSides(
       nextAppState.currentItemPolygonSides,
+    ),
+    currentItemAnimationSpeed: normalizeLineAnimationSpeed(
+      nextAppState.currentItemAnimationSpeed,
     ),
     editingFrame: null,
     // the drawing's own, never carried over from the drawing open before;

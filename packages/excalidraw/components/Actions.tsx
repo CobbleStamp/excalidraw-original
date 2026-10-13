@@ -191,6 +191,9 @@ export const SelectedShapeActions = ({
 
       {predicates.verticalAlign && renderAction("changeVerticalAlign")}
       {predicates.arrowheads && <>{renderAction("changeArrowhead")}</>}
+      {predicates.lineAnimation && renderAction("changeLineAnimation")}
+      {predicates.lineAnimationSpeed &&
+        renderAction("changeLineAnimationSpeed")}
 
       {predicates.opacity && renderAction("changeOpacity")}
 
@@ -305,6 +308,9 @@ const CombinedShapeProperties = ({
               {predicates.sloppiness && <>{renderAction("changeSloppiness")}</>}
               {predicates.roundness && renderAction("changeRoundness")}
               {predicates.polygonSides && renderAction("changePolygonSides")}
+              {predicates.lineAnimation && renderAction("changeLineAnimation")}
+              {predicates.lineAnimationSpeed &&
+                renderAction("changeLineAnimationSpeed")}
               {predicates.opacity && renderAction("changeOpacity")}
             </div>
           </PropertiesPopover>

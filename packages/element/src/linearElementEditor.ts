@@ -2034,6 +2034,14 @@ export class LinearElementEditor {
     };
   }
 
+  /** The length of the path the line is drawn along, in drawing units */
+  static getPathLength(
+    container: ExcalidrawLinearElement,
+    elementsMap: ElementsMap,
+  ): number {
+    return getLinearElementPathMetrics(container, elementsMap).totalLength;
+  }
+
   static getPointAtPathParameter(
     container: ExcalidrawLinearElement,
     pathParameter: number,

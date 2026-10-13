@@ -11,6 +11,8 @@ import {
   isTextElement,
   hasStrokeColor,
   toolIsArrow,
+  canAnimateLine,
+  isAnimatedLine,
 } from "@excalidraw/element";
 
 import type {
@@ -156,6 +158,9 @@ export const getShapeActionPredicates = (
     polygonSides: forToolOrSelection((type) => type === "polygon"),
     arrowType: forToolOrSelection(toolIsArrow),
     arrowheads: forToolOrSelection(canHaveArrowheads),
+    // excalidraw-web: a new line has no animation, so these follow the selection only
+    lineAnimation: targetElements.some(canAnimateLine),
+    lineAnimationSpeed: targetElements.some(isAnimatedLine),
 
     // text
     text: activeToolType === "text" || targetElements.some(isTextElement),

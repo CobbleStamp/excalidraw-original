@@ -389,6 +389,9 @@ export type Arrowhead =
 
 export type AnyArrowhead = Arrowhead | ArrowheadLegacy;
 
+/** excalidraw-web: how a line animates: one run when triggered, or runs over and over */
+export type LineAnimation = "once" | "loop";
+
 export type ExcalidrawLinearElement = _ExcalidrawElementBase &
   Readonly<{
     type: "line" | "arrow";
@@ -397,6 +400,13 @@ export type ExcalidrawLinearElement = _ExcalidrawElementBase &
     endBinding: FixedPointBinding | null;
     startArrowhead: Arrowhead | null;
     endArrowhead: Arrowhead | null;
+    /**
+     * excalidraw-web: a marker travels along the line, once each time it is
+     * triggered or over and over; missing means no animation
+     */
+    animation?: LineAnimation;
+    /** excalidraw-web: how fast the marker travels, in drawing units a second */
+    animationSpeed?: number;
   }>;
 
 export type ExcalidrawLineElement = ExcalidrawLinearElement &

@@ -266,6 +266,13 @@ export const DEFAULT_STICKY_NOTE_SIZE = 250;
 export const POLYGON_MIN_SIDES = 3;
 export const POLYGON_MAX_SIDES = 12;
 export const DEFAULT_POLYGON_SIDES = 6;
+
+/** How fast an animated line's marker can travel, in drawing units a second, and the speed it starts at */
+export const LINE_ANIMATION_MIN_SPEED = 50;
+export const LINE_ANIMATION_MAX_SPEED = 1000;
+export const DEFAULT_LINE_ANIMATION_SPEED = 200;
+/** The still time between one run of an animated line's marker and the next */
+export const LINE_ANIMATION_PAUSE_MS = 1000;
 // floor for a finalized note's width and base height; the UI floor is font-aware
 // on top of it (see `getStickyNoteMinSize`)
 export const STICKY_NOTE_MIN_SIZE = 75;

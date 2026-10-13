@@ -25,6 +25,7 @@ exports[`exportToSvg > with default arguments 1`] = `
   "contextMenu": null,
   "croppingElementId": null,
   "currentHoveredFontFamily": null,
+  "currentItemAnimationSpeed": 200,
   "currentItemArrowType": "round",
   "currentItemBackgroundColor": "transparent",
   "currentItemBold": false,
