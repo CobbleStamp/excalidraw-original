@@ -90,7 +90,31 @@ type _ExcalidrawElementBase = Readonly<{
   /** excalidraw-web: false keeps the element's text on one line per
       paragraph instead of wrapping it. Absent means it wraps, as upstream. */
   wrapsText?: boolean;
+  /**
+   * excalidraw-web: the element animates, once each time it is triggered or
+   * over and over; missing means no animation
+   */
+  animation?: ElementAnimation;
+  /** excalidraw-web: how fast its animation runs, in drawing units a second */
+  animationSpeed?: number;
+  /** excalidraw-web: how it animates; missing means its kind's default */
+  animationEffect?: AnimationEffect;
 }>;
+
+/** excalidraw-web: how an element animates: one run when triggered, or runs over and over */
+export type ElementAnimation = "once" | "loop";
+
+/**
+ * excalidraw-web: what an animation looks like: a dot or a chevron travelling
+ * along a line; on any other element, a light travelling around it, a pulse
+ * or a shimmer
+ */
+export type AnimationEffect =
+  | "dot"
+  | "chevron"
+  | "travel"
+  | "pulse"
+  | "shimmer";
 
 export type ExcalidrawSelectionElement = _ExcalidrawElementBase & {
   type: "selection";
@@ -389,9 +413,6 @@ export type Arrowhead =
 
 export type AnyArrowhead = Arrowhead | ArrowheadLegacy;
 
-/** excalidraw-web: how a line animates: one run when triggered, or runs over and over */
-export type LineAnimation = "once" | "loop";
-
 export type ExcalidrawLinearElement = _ExcalidrawElementBase &
   Readonly<{
     type: "line" | "arrow";
@@ -400,13 +421,6 @@ export type ExcalidrawLinearElement = _ExcalidrawElementBase &
     endBinding: FixedPointBinding | null;
     startArrowhead: Arrowhead | null;
     endArrowhead: Arrowhead | null;
-    /**
-     * excalidraw-web: a marker travels along the line, once each time it is
-     * triggered or over and over; missing means no animation
-     */
-    animation?: LineAnimation;
-    /** excalidraw-web: how fast the marker travels, in drawing units a second */
-    animationSpeed?: number;
   }>;
 
 export type ExcalidrawLineElement = ExcalidrawLinearElement &

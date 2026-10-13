@@ -1181,7 +1181,7 @@ export const StrokeWidthBaseIcon = createIcon(
 );
 
 /** excalidraw-web: a line with a lit dot that travels along it once */
-export const LineAnimateOnceIcon = createIcon(
+export const AnimateOnceIcon = createIcon(
   <>
     <path
       d="M4.167 10h11.666"
@@ -1202,7 +1202,7 @@ export const LineAnimateOnceIcon = createIcon(
 );
 
 /** excalidraw-web: a line with a lit dot that travels along it over and over */
-export const LineAnimateLoopIcon = createIcon(
+export const AnimateLoopIcon = createIcon(
   <>
     <path
       d="M4.167 12.5h11.666"
@@ -1219,6 +1219,110 @@ export const LineAnimateLoopIcon = createIcon(
       strokeLinecap="round"
       strokeLinejoin="round"
       fill="none"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
+/** excalidraw-web: a lit dot on a line */
+export const AnimateDotIcon = createIcon(
+  <>
+    <path
+      d="M4.167 10h11.666"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+    />
+    <circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none" />
+  </>,
+  modifiedTablerIconProps,
+);
+
+/** excalidraw-web: a chevron on a line, pointing the way it travels */
+export const AnimateChevronIcon = createIcon(
+  <>
+    <path
+      d="M4.167 10h11.666"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+    />
+    <path
+      d="M8.5 6.5l3.5 3.5l-3.5 3.5"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
+/** excalidraw-web: a box with a lit dot travelling round its outline */
+export const AnimateTravelIcon = createIcon(
+  <>
+    <rect
+      x="4"
+      y="5"
+      width="12"
+      height="10"
+      rx="2"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      fill="none"
+    />
+    <circle cx="16" cy="9" r="2.25" fill="currentColor" stroke="none" />
+  </>,
+  modifiedTablerIconProps,
+);
+
+/** excalidraw-web: a box with a swollen glow around it */
+export const AnimatePulseIcon = createIcon(
+  <>
+    <rect
+      x="6"
+      y="7"
+      width="8"
+      height="6"
+      rx="1.5"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      fill="none"
+    />
+    <rect
+      x="3.5"
+      y="4.5"
+      width="13"
+      height="11"
+      rx="3"
+      stroke="currentColor"
+      strokeWidth="0.75"
+      strokeDasharray="1.5 1.5"
+      fill="none"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
+/** excalidraw-web: a box with a band of light across it */
+export const AnimateShimmerIcon = createIcon(
+  <>
+    <rect
+      x="4"
+      y="5"
+      width="12"
+      height="10"
+      rx="2"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      fill="none"
+    />
+    <path
+      d="M8 15l4 -10M11 15l3 -7.5"
+      stroke="currentColor"
+      strokeWidth="1"
+      strokeLinecap="round"
     />
   </>,
   modifiedTablerIconProps,

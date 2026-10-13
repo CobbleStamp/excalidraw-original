@@ -44,8 +44,8 @@ import {
   projectFixedPointOntoDiagonal,
   isNonDeletedElement,
   normalizePolygonSides,
-  normalizeLineAnimationSpeed,
-  restoreLineAnimation,
+  normalizeAnimationSpeed,
+  restoreAnimation,
 } from "@excalidraw/element";
 import { normalizeFixedPoint } from "@excalidraw/element";
 import {
@@ -435,10 +435,21 @@ const repairBinding = <T extends ExcalidrawArrowElement>(
 
 const restoreElementWithProperties = <
   T extends Required<
-    Omit<ExcalidrawElement, "customData" | "keepsSize" | "wrapsText">
+    Omit<
+      ExcalidrawElement,
+      | "customData"
+      | "keepsSize"
+      | "wrapsText"
+      | "animation"
+      | "animationSpeed"
+      | "animationEffect"
+    >
   > & {
     customData?: ExcalidrawElement["customData"];
     keepsSize?: ExcalidrawElement["keepsSize"];
+    animation?: ExcalidrawElement["animation"];
+    animationSpeed?: ExcalidrawElement["animationSpeed"];
+    animationEffect?: ExcalidrawElement["animationEffect"];
     wrapsText?: ExcalidrawElement["wrapsText"];
     /** @deprecated */
     boundElementIds?: readonly ExcalidrawElement["id"][];
@@ -524,7 +535,15 @@ const restoreElementWithProperties = <
   return ret;
 };
 
+/** Restores an element, and reads its animation back (excalidraw-web) */
 export const restoreElement = (
+  ...args: Parameters<typeof restoreElementOfType>
+): ReturnType<typeof restoreElementOfType> => {
+  const restored = restoreElementOfType(...args);
+  return restored && restoreAnimation(restored);
+};
+
+const restoreElementOfType = (
   /** element to be restored */
   element: Exclude<ExcalidrawElement, ExcalidrawSelectionElement>,
   /** all elements to be restored */
@@ -685,7 +704,7 @@ export const restoreElement = (
         ...getSizeFromPoints(points),
       });
 
-      return handleOversizedLinearElements(restoreLineAnimation(restoredLine));
+      return handleOversizedLinearElements(restoredLine);
     case "arrow": {
       const startArrowhead = normalizeArrowhead(element.startArrowhead);
       const endArrowhead =
@@ -752,9 +771,7 @@ export const restoreElement = (
         ),
       };
 
-      return handleOversizedLinearElements(
-        restoreLineAnimation(normalizedRestoredElement),
-      );
+      return handleOversizedLinearElements(normalizedRestoredElement);
     }
 
     // generic elements
@@ -1435,7 +1452,7 @@ export const restoreAppState = (
     currentItemPolygonSides: normalizePolygonSides(
       nextAppState.currentItemPolygonSides,
     ),
-    currentItemAnimationSpeed: normalizeLineAnimationSpeed(
+    currentItemAnimationSpeed: normalizeAnimationSpeed(
       nextAppState.currentItemAnimationSpeed,
     ),
     editingFrame: null,

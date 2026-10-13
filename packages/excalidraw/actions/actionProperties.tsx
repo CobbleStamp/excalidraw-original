@@ -24,9 +24,9 @@ import {
   invariant,
   POLYGON_MAX_SIDES,
   POLYGON_MIN_SIDES,
-  DEFAULT_LINE_ANIMATION_SPEED,
-  LINE_ANIMATION_MAX_SPEED,
-  LINE_ANIMATION_MIN_SPEED,
+  DEFAULT_ANIMATION_SPEED,
+  ANIMATION_MAX_SPEED,
+  ANIMATION_MIN_SPEED,
   FONT_SIZES,
   type StrokeWidthKey,
 } from "@excalidraw/common";
@@ -60,8 +60,9 @@ import {
 } from "@excalidraw/element";
 
 import {
-  canAnimateLine,
-  isAnimatedLine,
+  animationEffectOf,
+  animationEffectsOf,
+  isAnimated,
   isArrowElement,
   isBoundToContainer,
   isElbowArrow,
@@ -91,7 +92,8 @@ import type { LocalPoint, Radians } from "@excalidraw/math";
 
 import type {
   Arrowhead,
-  LineAnimation,
+  AnimationEffect,
+  ElementAnimation,
   ElementsMap,
   ExcalidrawBindableElement,
   ExcalidrawElement,
@@ -117,7 +119,10 @@ import { ColorPicker } from "../components/ColorPicker/ColorPicker";
 import { FontPicker } from "../components/FontPicker/FontPicker";
 import { IconPicker } from "../components/IconPicker";
 import { Range } from "../components/Range";
-import { takesStrokeColor } from "../components/shapeActionPredicates";
+import {
+  canAnimateFor,
+  takesStrokeColor,
+} from "../components/shapeActionPredicates";
 import {
   ArrowheadArrowIcon,
   ArrowheadBarIcon,
@@ -165,12 +170,18 @@ import {
   strokeVariabilityConstantIcon,
   strokeVariabilityVariableIcon,
   TextBoldIcon,
-  LineAnimateOnceIcon,
-  LineAnimateLoopIcon,
+  AnimateOnceIcon,
+  AnimateLoopIcon,
+  AnimateDotIcon,
+  AnimateChevronIcon,
+  AnimateTravelIcon,
+  AnimatePulseIcon,
+  AnimateShimmerIcon,
 } from "../components/icons";
 
 import { Fonts } from "../fonts";
 import { getLanguage, t } from "../i18n";
+
 import {
   canHaveArrowheads,
   getSelectedElements,
@@ -190,6 +201,8 @@ import {
   resolveColorTarget,
 } from "./colorTargets";
 import { register } from "./register";
+
+import type { TranslationKeys } from "../i18n";
 
 import type {
   AppClassProperties,
@@ -2064,17 +2077,17 @@ export const actionChangePolygonSides = register<number>({
   },
 });
 
-/** excalidraw-web: a line's Animation choice, "none" for no animation */
-type LineAnimationChoice = LineAnimation | "none";
+/** excalidraw-web: an element's Animation choice, "none" for no animation */
+type AnimationChoice = ElementAnimation | "none";
 
-/** excalidraw-web: sets how the selected lines and arrows animate: not at all, once when triggered, or in a loop */
-export const actionChangeLineAnimation = register<LineAnimationChoice>({
-  name: "changeLineAnimation",
-  label: "labels.lineAnimation",
+/** excalidraw-web: sets how the selected elements animate: not at all, once when triggered, or in a loop */
+export const actionChangeAnimation = register<AnimationChoice>({
+  name: "changeAnimation",
+  label: "labels.animation",
   trackEvent: false,
-  perform: (elements, appState, value) => ({
+  perform: (elements, appState, value, app) => ({
     elements: changeProperty(elements, appState, (el) =>
-      !canAnimateLine(el) ||
+      !canAnimateFor(el, app) ||
       el.animation === (value === "none" ? undefined : value)
         ? el
         : value === "none"
@@ -2082,8 +2095,8 @@ export const actionChangeLineAnimation = register<LineAnimationChoice>({
           newElementWith(el, { animation: undefined }, true)
         : newElementWith(el, {
             animation: value,
-            // a line that starts to animate takes the last speed set; one already animating keeps its own
-            animationSpeed: isAnimatedLine(el)
+            // an element that starts to animate takes the last speed set; one already animating keeps its own
+            animationSpeed: isAnimated(el)
               ? el.animationSpeed
               : appState.currentItemAnimationSpeed,
           }),
@@ -2093,36 +2106,36 @@ export const actionChangeLineAnimation = register<LineAnimationChoice>({
   }),
   PanelComponent: ({ elements, app, updateData }) => (
     <fieldset>
-      <legend>{t("labels.lineAnimation")}</legend>
+      <legend>{t("labels.animation")}</legend>
       <div className="buttonList">
-        <RadioSelection<LineAnimationChoice>
-          group="lineAnimation"
+        <RadioSelection<AnimationChoice>
+          group="animation"
           options={[
             {
               value: "none",
-              text: t("labels.lineAnimation_none"),
+              text: t("labels.animation_none"),
               icon: StrokeWidthBaseIcon,
-              testId: "line-animation-none",
+              testId: "animation-none",
             },
             {
               value: "once",
-              text: t("labels.lineAnimation_once"),
-              icon: LineAnimateOnceIcon,
-              testId: "line-animation-once",
+              text: t("labels.animation_once"),
+              icon: AnimateOnceIcon,
+              testId: "animation-once",
             },
             {
               value: "loop",
-              text: t("labels.lineAnimation_loop"),
-              icon: LineAnimateLoopIcon,
-              testId: "line-animation-loop",
+              text: t("labels.animation_loop"),
+              icon: AnimateLoopIcon,
+              testId: "animation-loop",
             },
           ]}
-          value={getFormValue<LineAnimationChoice | null>(
+          value={getFormValue<AnimationChoice | null>(
             elements,
             app,
             (element) =>
-              canAnimateLine(element) ? element.animation ?? "none" : null,
-            canAnimateLine,
+              canAnimateFor(element, app) ? element.animation ?? "none" : null,
+            (element) => canAnimateFor(element, app),
             null,
           )}
           onChange={(value) => updateData(value)}
@@ -2132,14 +2145,80 @@ export const actionChangeLineAnimation = register<LineAnimationChoice>({
   ),
 });
 
-/** excalidraw-web: sets how fast the marker travels on the selected animated lines, and remembers it for the next */
-export const actionChangeLineAnimationSpeed = register<number>({
-  name: "changeLineAnimationSpeed",
-  label: "labels.lineAnimationSpeed",
+/** excalidraw-web: each effect's label and icon in the panel */
+const ANIMATION_EFFECT_OPTIONS: Record<
+  AnimationEffect,
+  { text: TranslationKeys; icon: typeof AnimateDotIcon }
+> = {
+  dot: { text: "labels.animationEffect_dot", icon: AnimateDotIcon },
+  chevron: { text: "labels.animationEffect_chevron", icon: AnimateChevronIcon },
+  travel: { text: "labels.animationEffect_travel", icon: AnimateTravelIcon },
+  pulse: { text: "labels.animationEffect_pulse", icon: AnimatePulseIcon },
+  shimmer: { text: "labels.animationEffect_shimmer", icon: AnimateShimmerIcon },
+};
+
+/** excalidraw-web: sets the effect the selected animated elements play, where they offer it */
+export const actionChangeAnimationEffect = register<AnimationEffect>({
+  name: "changeAnimationEffect",
+  label: "labels.animationEffect",
   trackEvent: false,
-  perform: (elements, appState, value) => ({
+  perform: (elements, appState, value, app) => ({
     elements: changeProperty(elements, appState, (el) =>
-      isAnimatedLine(el) ? newElementWith(el, { animationSpeed: value }) : el,
+      value !== undefined &&
+      isAnimated(el) &&
+      canAnimateFor(el, app) &&
+      animationEffectsOf(el).includes(value)
+        ? newElementWith(el, { animationEffect: value })
+        : el,
+    ),
+    appState,
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  }),
+  PanelComponent: ({ elements, app, updateData }) => {
+    const animated = getTargetElements(
+      app.scene.getNonDeletedElementsMap(),
+      app.state,
+    ).filter((element) => isAnimated(element) && canAnimateFor(element, app));
+    // the panel shows Effect only when every animated element offers the same effects
+    const offered = animated.length > 0 ? animationEffectsOf(animated[0]) : [];
+    return (
+      <fieldset>
+        <legend>{t("labels.animationEffect")}</legend>
+        <div className="buttonList">
+          <RadioSelection<AnimationEffect>
+            group="animationEffect"
+            options={offered.map((effect) => ({
+              value: effect,
+              text: t(ANIMATION_EFFECT_OPTIONS[effect].text),
+              icon: ANIMATION_EFFECT_OPTIONS[effect].icon,
+              testId: `animation-effect-${effect}`,
+            }))}
+            value={getFormValue<AnimationEffect | null>(
+              elements,
+              app,
+              (element) =>
+                isAnimated(element) ? animationEffectOf(element) : null,
+              isAnimated,
+              null,
+            )}
+            onChange={(value) => updateData(value)}
+          />
+        </div>
+      </fieldset>
+    );
+  },
+});
+
+/** excalidraw-web: sets how fast the selected animated elements run, and remembers it for the next */
+export const actionChangeAnimationSpeed = register<number>({
+  name: "changeAnimationSpeed",
+  label: "labels.animationSpeed",
+  trackEvent: false,
+  perform: (elements, appState, value, app) => ({
+    elements: changeProperty(elements, appState, (el) =>
+      isAnimated(el) && canAnimateFor(el, app)
+        ? newElementWith(el, { animationSpeed: value })
+        : el,
     ),
     appState: { ...appState, currentItemAnimationSpeed: value },
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
@@ -2149,22 +2228,22 @@ export const actionChangeLineAnimationSpeed = register<number>({
       elements,
       app,
       (element) =>
-        isAnimatedLine(element)
-          ? element.animationSpeed ?? DEFAULT_LINE_ANIMATION_SPEED
+        isAnimated(element)
+          ? element.animationSpeed ?? DEFAULT_ANIMATION_SPEED
           : null,
-      isAnimatedLine,
+      isAnimated,
       null,
     );
     return (
       <Range
-        label={t("labels.lineAnimationSpeed")}
+        label={t("labels.animationSpeed")}
         value={speed ?? appState.currentItemAnimationSpeed}
         hasCommonValue={speed !== null}
         onChange={updateData}
-        min={LINE_ANIMATION_MIN_SPEED}
-        max={LINE_ANIMATION_MAX_SPEED}
+        min={ANIMATION_MIN_SPEED}
+        max={ANIMATION_MAX_SPEED}
         step={50}
-        testId="line-animation-speed"
+        testId="animation-speed"
       />
     );
   },
