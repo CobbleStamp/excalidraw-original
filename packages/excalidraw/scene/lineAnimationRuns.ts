@@ -30,6 +30,15 @@ export class LineAnimationRuns {
     }
   }
 
+  /** Forgets the pointers named with `prefix` that are not among `present`, which left: coming back onto a line enters it */
+  forgetPointersGone(prefix: string, present: ReadonlySet<string>): void {
+    for (const pointer of [...this.hovered.keys()]) {
+      if (pointer.startsWith(prefix) && !present.has(pointer)) {
+        this.hovered.delete(pointer);
+      }
+    }
+  }
+
   /** The lines playing a run, with the time each began */
   current(): ReadonlyMap<string, number> {
     return this.runs;

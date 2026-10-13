@@ -173,6 +173,16 @@ describe("triggered runs", () => {
     expect(runs.current().get("a")).toBe(5);
   });
 
+  it("begin again for a pointer that left and came back onto the same line", () => {
+    const runs = new LineAnimationRuns();
+    runs.pointerOver("collaborator:1", "a", 0);
+    runs.finish("a");
+    runs.forgetPointersGone("collaborator:", new Set(["collaborator:2"]));
+    runs.pointerOver("collaborator:1", "a", 10);
+
+    expect(runs.current().get("a")).toBe(10);
+  });
+
   it("tell their listener when they begin and when the last one ends", () => {
     const runs = new LineAnimationRuns();
     const heard = vi.fn();

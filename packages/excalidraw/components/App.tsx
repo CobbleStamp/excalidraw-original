@@ -5490,7 +5490,9 @@ class App extends React.Component<AppProps, AppState> {
       if (collaborators) {
         this.laserTrails.updateCollabTrails(collaborators);
         // excalidraw-web: a collaborator's pointer entering a line plays it, as the user's own does
+        const present = new Set<string>();
         for (const [id, collaborator] of collaborators) {
+          present.add(`collaborator:${id}`);
           // a pointer that is gone is over no line, so coming back onto one enters it
           this.lineAnimationRuns.pointerOver(
             `collaborator:${id}`,
@@ -5498,6 +5500,7 @@ class App extends React.Component<AppProps, AppState> {
             performance.now(),
           );
         }
+        this.lineAnimationRuns.forgetPointersGone("collaborator:", present);
         this.setState({ collaborators });
       }
     },
