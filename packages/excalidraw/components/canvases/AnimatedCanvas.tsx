@@ -103,18 +103,8 @@ const animationsAt = (
 /** Draws the animations of looping elements and triggered runs, frame by frame */
 const AnimatedCanvas = (props: AnimatedCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // this editor's own canvas for shimmers, its bitmap let go when the layer goes
+  // this editor's own canvas for shimmers, its bitmap let go when nothing animates
   const shimmerCanvas = useRef<HTMLCanvasElement | null>(null);
-  useEffect(
-    () => () => {
-      if (shimmerCanvas.current) {
-        shimmerCanvas.current.width = 0;
-        shimmerCanvas.current.height = 0;
-        shimmerCanvas.current = null;
-      }
-    },
-    [],
-  );
   const [, runsChanged] = useReducer((count: number) => count + 1, 0);
   const { runs, ownerWindow } = props;
   useEffect(() => runs.subscribe(runsChanged), [runs]);
@@ -155,7 +145,14 @@ const AnimatedCanvas = (props: AnimatedCanvasProps) => {
         });
       }
     });
-    return () => ownerWindow.cancelAnimationFrame(frame);
+    return () => {
+      ownerWindow.cancelAnimationFrame(frame);
+      if (shimmerCanvas.current) {
+        shimmerCanvas.current.width = 0;
+        shimmerCanvas.current.height = 0;
+        shimmerCanvas.current = null;
+      }
+    };
   }, [running, ownerWindow]);
 
   if (!running) {

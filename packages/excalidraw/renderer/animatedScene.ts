@@ -207,38 +207,42 @@ const drawShimmer = (
   const own = shimmerCanvas.getContext("2d")!;
   // the canvas is kept between frames, its compositing with it
   own.save();
-  own.setTransform(1, 0, 0, 1, 0, 0);
-  own.clearRect(left, top, width, height);
-  own.beginPath();
-  own.rect(left, top, width, height);
-  own.clip();
-  own.scale(pixels, pixels);
-  renderElement(
-    element,
-    props.renderableElementsMap,
-    props.elementsMap,
-    props.rc,
-    own,
-    props.renderConfig,
-    appState,
-    state,
-  );
-  own.translate(shiftX, shiftY);
-  own.globalCompositeOperation = "source-in";
-  const { from, to } = getShimmerBand(bounds, progress);
-  const light = own.createLinearGradient(from[0], from[1], to[0], to[1]);
-  light.addColorStop(0, "rgba(255, 255, 255, 0)");
-  light.addColorStop(0.5, "rgba(255, 255, 255, 0.85)");
-  light.addColorStop(1, "rgba(255, 255, 255, 0)");
-  own.fillStyle = light;
-  // past the worked area, so no copy of the element is left outside the band
-  own.fillRect(
-    bounds[0] - 2 * pad,
-    bounds[1] - 2 * pad,
-    bounds[2] - bounds[0] + 4 * pad,
-    bounds[3] - bounds[1] + 4 * pad,
-  );
-  own.restore();
+  // restored even when drawing throws, so no clip or compositing outlives the frame
+  try {
+    own.setTransform(1, 0, 0, 1, 0, 0);
+    own.clearRect(left, top, width, height);
+    own.beginPath();
+    own.rect(left, top, width, height);
+    own.clip();
+    own.scale(pixels, pixels);
+    renderElement(
+      element,
+      props.renderableElementsMap,
+      props.elementsMap,
+      props.rc,
+      own,
+      props.renderConfig,
+      appState,
+      state,
+    );
+    own.translate(shiftX, shiftY);
+    own.globalCompositeOperation = "source-in";
+    const { from, to } = getShimmerBand(bounds, progress);
+    const light = own.createLinearGradient(from[0], from[1], to[0], to[1]);
+    light.addColorStop(0, "rgba(255, 255, 255, 0)");
+    light.addColorStop(0.5, "rgba(255, 255, 255, 0.85)");
+    light.addColorStop(1, "rgba(255, 255, 255, 0)");
+    own.fillStyle = light;
+    // past the worked area, so no copy of the element is left outside the band
+    own.fillRect(
+      bounds[0] - 2 * pad,
+      bounds[1] - 2 * pad,
+      bounds[2] - bounds[0] + 4 * pad,
+      bounds[3] - bounds[1] + 4 * pad,
+    );
+  } finally {
+    own.restore();
+  }
   context.save();
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.drawImage(
@@ -327,27 +331,37 @@ export const renderAnimatedScene = (props: AnimatedSceneProps): void => {
       continue;
     }
     context.save();
-    clipElement(element, state);
-    if (animation.effect === "shimmer") {
-      drawShimmer(context, element, animation.progress, props, appState, state);
+    // restored even when drawing throws, so its clip does not outlive the frame
+    try {
+      clipElement(element, state);
+      if (animation.effect === "shimmer") {
+        drawShimmer(
+          context,
+          element,
+          animation.progress,
+          props,
+          appState,
+          state,
+        );
+        continue;
+      }
+      const color = applyDarkModeFilter(
+        animationLightColorOf(element, props.colorOf),
+        appState.theme === THEME.DARK,
+      );
+      context.translate(
+        appState.scrollX + state.offset.x,
+        appState.scrollY + state.offset.y,
+      );
+      context.globalAlpha = state.opacity;
+      context.fillStyle = color;
+      context.strokeStyle = color;
+      context.shadowColor = color;
+      // the blur is in device pixels, so it follows zoom and pixel ratio itself
+      context.shadowBlur = Math.max(12, element.strokeWidth * 5) * zoom * scale;
+      drawMarkerOrPulse(context, animation, elementsMap);
+    } finally {
       context.restore();
-      continue;
     }
-    const color = applyDarkModeFilter(
-      animationLightColorOf(element, props.colorOf),
-      appState.theme === THEME.DARK,
-    );
-    context.translate(
-      appState.scrollX + state.offset.x,
-      appState.scrollY + state.offset.y,
-    );
-    context.globalAlpha = state.opacity;
-    context.fillStyle = color;
-    context.strokeStyle = color;
-    context.shadowColor = color;
-    // the blur is in device pixels, so it follows zoom and pixel ratio itself
-    context.shadowBlur = Math.max(12, element.strokeWidth * 5) * zoom * scale;
-    drawMarkerOrPulse(context, animation, elementsMap);
-    context.restore();
   }
 };
