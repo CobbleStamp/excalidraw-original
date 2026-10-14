@@ -161,6 +161,7 @@ export const resolveElementRenderState = (
   renderConfig: Pick<
     StaticCanvasRenderConfig,
     | "elementRenderOverrides"
+    | "elementFades"
     | "elementsPendingErasure"
     | "pendingFlowchartNodes"
   >,
@@ -168,6 +169,7 @@ export const resolveElementRenderState = (
 ): ElementRenderState => {
   const {
     elementRenderOverrides,
+    elementFades,
     elementsPendingErasure,
     pendingFlowchartNodes,
   } = renderConfig;
@@ -181,9 +183,15 @@ export const resolveElementRenderState = (
         100,
       )
     : 100;
-  // Frame and element alpha multiply (50% each produces 25%).
+  // Frame and element alpha multiply (50% each produces 25%); the host's
+  // override wins over a running Fade, so what it hides stays hidden
   let opacity =
-    (frameOpacity * clamp(override?.opacity ?? element.opacity, 0, 100)) /
+    (frameOpacity *
+      clamp(
+        override?.opacity ?? elementFades?.get(element.id) ?? element.opacity,
+        0,
+        100,
+      )) /
     10000;
   if (
     elementsPendingErasure.has(element.id) ||

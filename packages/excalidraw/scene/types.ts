@@ -44,6 +44,8 @@ export type StaticCanvasRenderConfig = {
   pendingFlowchartNodes: PendingExcalidrawElements | null;
   theme: AppState["theme"];
   elementRenderOverrides?: ElementRenderOverrides;
+  /** excalidraw-web: the opacity of each element a Fade is running on, this frame */
+  elementFades?: ReadonlyMap<string, number>;
 };
 
 export type SVGRenderConfig = {

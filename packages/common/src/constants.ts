@@ -280,6 +280,19 @@ export const ANIMATION_PAUSE_MS = 1000;
 export const ANIMATION_DURATION_TIMES_SPEED = 160_000;
 export const ANIMATION_MIN_DURATION_MS = 300;
 export const ANIMATION_MAX_DURATION_MS = 2000;
+/**
+ * excalidraw-web: every timing of fading (docs/product-overview.md
+ * §Fading), kept together to be tuned. A Fade run, out and back, lasts
+ * this over its speed, in milliseconds, kept between the shortest and
+ * longest run.
+ */
+export const FADE_DURATION_TIMES_SPEED = 320_000;
+export const FADE_MIN_DURATION_MS = 600;
+export const FADE_MAX_DURATION_MS = 4000;
+/** How long an agent's fade in or fade out, or a change of opacity it makes, takes to show */
+export const FADE_TRANSITION_MS = 500;
+/** The longest an agent's fade in or fade out holds, and how long one holds when the agent names no time */
+export const FADE_HOLD_MAX_MS = 600_000;
 // floor for a finalized note's width and base height; the UI floor is font-aware
 // on top of it (see `getStickyNoteMinSize`)
 export const STICKY_NOTE_MIN_SIZE = 75;

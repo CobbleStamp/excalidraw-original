@@ -179,6 +179,7 @@ import {
   AnimateTravelIcon,
   AnimatePulseIcon,
   AnimateShimmerIcon,
+  AnimateFadeIcon,
 } from "../components/icons";
 
 import { Fonts } from "../fonts";
@@ -2157,6 +2158,7 @@ const ANIMATION_EFFECT_OPTIONS: Record<
   travel: { text: "labels.animationEffect_travel", icon: AnimateTravelIcon },
   pulse: { text: "labels.animationEffect_pulse", icon: AnimatePulseIcon },
   shimmer: { text: "labels.animationEffect_shimmer", icon: AnimateShimmerIcon },
+  fade: { text: "labels.animationEffect_fade", icon: AnimateFadeIcon },
 };
 
 /** excalidraw-web: sets the effect the selected animated elements play, where they offer it */

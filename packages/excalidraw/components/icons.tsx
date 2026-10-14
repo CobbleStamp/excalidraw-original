@@ -1328,6 +1328,26 @@ export const AnimateShimmerIcon = createIcon(
   modifiedTablerIconProps,
 );
 
+/** excalidraw-web: a box going from solid to dashed, fading away */
+export const AnimateFadeIcon = createIcon(
+  <>
+    <path
+      d="M10 5h-4a2 2 0 0 0 -2 2v6a2 2 0 0 0 2 2h4z"
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="1.25"
+    />
+    <path
+      d="M10 5h4a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-4"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeDasharray="1.5 1.5"
+      fill="none"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
 export const StrokeWidthBoldIcon = createIcon(
   <path
     d="M5 10h10"

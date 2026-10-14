@@ -446,6 +446,7 @@ import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 import { isOverScrollBars } from "../scene/scrollbars";
 import { AnimationRuns } from "../scene/animationRuns";
+import { ElementFades } from "../scene/elementFades";
 import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
 import { EraserTrail } from "../eraser";
@@ -842,6 +843,8 @@ class App extends React.Component<AppProps, AppState> {
   private elementRenderOverrides: ElementRenderOverrides = new Map();
   /** excalidraw-web: the elements playing a triggered run */
   private animationRuns = new AnimationRuns();
+  /** excalidraw-web: the opacities running Fades give elements this frame */
+  private elementFades = new ElementFades();
   /** offsets of `elementRenderOverrides`; keeps its identity while they don't change */
   private elementRenderOffsets: ElementRenderOffsets = new Map();
   private renderOverridesUpdatePending = false;
@@ -2741,6 +2744,7 @@ class App extends React.Component<AppProps, AppState> {
                               theme: this.state.theme,
                               ...this.getRenderOverrideConfig(),
                             }}
+                            fades={this.elementFades}
                           />
                           <AnimatedCanvas
                             appState={this.state}
@@ -2764,6 +2768,7 @@ class App extends React.Component<AppProps, AppState> {
                               ...this.getRenderOverrideConfig(),
                             }}
                             runs={this.animationRuns}
+                            fades={this.elementFades}
                             canAnimate={this.canAnimateElement}
                             colorOf={this.props.animationColorOf}
                             renderStateOf={this.getElementRenderState}

@@ -5,7 +5,8 @@
  * runs again on a clock all elements share; a triggered run goes once from
  * the moment it was asked for. A line's dot or chevron travels along the
  * line; any other element's travelling light goes around its outline (the
- * box around a text, image or formula, the stroke of a pencil drawing).
+ * box around a text, image or formula, the stroke of a pencil drawing); a
+ * fade takes any element's opacity away and back.
  */
 import {
   ANIMATION_DURATION_TIMES_SPEED,
@@ -15,6 +16,9 @@ import {
   ANIMATION_MIN_SPEED,
   ANIMATION_PAUSE_MS,
   DEFAULT_ANIMATION_SPEED,
+  FADE_DURATION_TIMES_SPEED,
+  FADE_MAX_DURATION_MS,
+  FADE_MIN_DURATION_MS,
 } from "@excalidraw/common";
 
 import {
@@ -68,13 +72,14 @@ export const ANIMATION_EFFECTS = [
   "travel",
   "pulse",
   "shimmer",
+  "fade",
 ] as const;
 
 const LINE_EFFECTS: readonly AnimationEffect[] = ANIMATION_EFFECTS.filter(
-  (effect) => effect === "dot" || effect === "chevron",
+  (effect) => effect === "dot" || effect === "chevron" || effect === "fade",
 );
 const SHAPE_EFFECTS: readonly AnimationEffect[] = ANIMATION_EFFECTS.filter(
-  (effect) => !LINE_EFFECTS.includes(effect),
+  (effect) => effect !== "dot" && effect !== "chevron",
 );
 
 /** Whether an element is a line or an arrow that may animate: one not closed into a polygon */
@@ -104,7 +109,7 @@ export const canAnimate = (element: ExcalidrawElement): boolean => {
   }
 };
 
-/** The effects an element may animate with: a dot or a chevron on a line or arrow, a travelling light, a pulse or a shimmer on the rest */
+/** The effects an element may animate with: a dot, a chevron or a fade on a line or arrow, a travelling light, a pulse, a shimmer or a fade on the rest */
 export const animationEffectsOf = (
   element: ExcalidrawElement,
 ): readonly AnimationEffect[] =>
@@ -464,6 +469,13 @@ export const getAnimationRunMs = (
       ANIMATION_MAX_DURATION_MS,
     );
   }
+  if (effect === "fade") {
+    return clamp(
+      FADE_DURATION_TIMES_SPEED / speed,
+      FADE_MIN_DURATION_MS,
+      FADE_MAX_DURATION_MS,
+    );
+  }
   const length = travelLength(element, elementsMap);
   return length > 0 ? (length / speed) * 1000 : 0;
 };
@@ -552,4 +564,14 @@ export const getTravellingPoint = (
     left -= length;
   }
   return stretches[stretches.length - 1][1];
+};
+
+/**
+ * An element's opacity `progress` of the way through a fade: from its own
+ * opacity to nothing and back, or, for an element at 0, from nothing to
+ * full and back
+ */
+export const getFadeOpacity = (opacity: number, progress: number): number => {
+  const away = Math.sin(Math.PI * clamp(progress, 0, 1)) ** 2;
+  return opacity > 0 ? opacity * (1 - away) : 100 * away;
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useReducer, useRef } from "react";
 
 import { isShallowEqual } from "@excalidraw/common";
 
@@ -10,6 +10,7 @@ import type {
 import { isRenderThrottlingEnabled } from "../../reactUtils";
 import { renderStaticScene } from "../../renderer/staticScene";
 
+import type { ElementFades } from "../../scene/elementFades";
 import type {
   RenderableElementsMap,
   StaticCanvasRenderConfig,
@@ -28,11 +29,15 @@ type StaticCanvasProps = {
   scale: number;
   appState: StaticCanvasAppState;
   renderConfig: StaticCanvasRenderConfig;
+  /** excalidraw-web: the running Fades, drawn here each frame they change */
+  fades: ElementFades;
 };
 
 const StaticCanvas = (props: StaticCanvasProps) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isComponentMounted = useRef(false);
+  const [, fadesChanged] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => props.fades.subscribe(fadesChanged), [props.fades]);
 
   useEffect(() => {
     props.canvas.style.width = `${props.appState.width}px`;
@@ -56,6 +61,7 @@ const StaticCanvas = (props: StaticCanvasProps) => {
       canvas.classList.add("excalidraw__canvas", "static");
     }
 
+    const fades = props.fades.current();
     renderStaticScene(
       {
         canvas,
@@ -65,7 +71,10 @@ const StaticCanvas = (props: StaticCanvasProps) => {
         allElementsMap: props.allElementsMap,
         visibleElements: props.visibleElements,
         appState: props.appState,
-        renderConfig: props.renderConfig,
+        renderConfig:
+          fades.size > 0
+            ? { ...props.renderConfig, elementFades: fades }
+            : props.renderConfig,
       },
       isRenderThrottlingEnabled(),
     );
@@ -112,6 +121,7 @@ const areEqual = (
   if (
     prevProps.canvasNonce !== nextProps.canvasNonce ||
     prevProps.scale !== nextProps.scale ||
+    prevProps.fades !== nextProps.fades ||
     // we need to memoize on elementsMap because they may have renewed
     // even if canvasNonce didn't change (e.g. we filter elements out based
     // on appState)

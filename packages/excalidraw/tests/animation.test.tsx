@@ -25,6 +25,7 @@ import {
   getAnimationPath,
   getAnimationRunMs,
   getDiamondPoints,
+  getFadeOpacity,
   getMarkerOnLine,
   getPolygonPoints,
   getLoopProgress,
@@ -32,6 +33,7 @@ import {
   CaptureUpdateAction,
   getTravellingPoint,
   mutateElement,
+  resolveElementRenderState,
 } from "@excalidraw/element";
 
 import type { LocalPoint, Radians } from "@excalidraw/math";
@@ -45,6 +47,7 @@ import type {
 import { Excalidraw } from "../index";
 import { restoreElements } from "../data/restore";
 import { AnimationRuns } from "../scene/animationRuns";
+import { ElementFades } from "../scene/elementFades";
 import {
   animationLightColorOf,
   getShimmerBand,
@@ -52,7 +55,7 @@ import {
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
-import { act, fireEvent, render, screen } from "./test-utils";
+import { act, fireEvent, render, screen, waitFor } from "./test-utils";
 
 const { h } = window;
 
@@ -190,13 +193,22 @@ describe("what a shape's animation is", () => {
     expect(canAnimate(API.createElement({ type: "embeddable" }))).toBe(false);
   });
 
-  it("offers a dot or a chevron on lines and arrows, a travelling light, a pulse or a shimmer on the rest", () => {
-    expect(animationEffectsOf(straight("line"))).toEqual(["dot", "chevron"]);
-    expect(animationEffectsOf(straight("arrow"))).toEqual(["dot", "chevron"]);
+  it("offers a dot, a chevron or a fade on lines and arrows, a travelling light, a pulse, a shimmer or a fade on the rest", () => {
+    expect(animationEffectsOf(straight("line"))).toEqual([
+      "dot",
+      "chevron",
+      "fade",
+    ]);
+    expect(animationEffectsOf(straight("arrow"))).toEqual([
+      "dot",
+      "chevron",
+      "fade",
+    ]);
     expect(animationEffectsOf(box("rectangle"))).toEqual([
       "travel",
       "pulse",
       "shimmer",
+      "fade",
     ]);
     expect(animationEffectsOf(API.createElement({ type: "frame" }))).toEqual(
       [],
@@ -227,6 +239,54 @@ describe("what a shape's animation is", () => {
     expect(at(400)).toBeCloseTo(400);
     expect(at(50)).toBe(2000);
     expect(at(1000)).toBe(300);
+  });
+
+  it("takes a fade 320 over its speed in seconds, kept between 0.6 and 4", () => {
+    const at = (speed: number) => {
+      const element = box("rectangle", { animationSpeed: speed });
+      return getAnimationRunMs(element, arrayToMap([element]), "fade");
+    };
+
+    expect(at(DEFAULT_ANIMATION_SPEED)).toBeCloseTo(1600);
+    expect(at(400)).toBeCloseTo(800);
+    expect(at(50)).toBe(4000);
+    expect(at(1000)).toBe(600);
+  });
+
+  it("fades from an element's own opacity to nothing and back, and one at 0 from nothing to full and back", () => {
+    expect(getFadeOpacity(40, 0)).toBeCloseTo(40);
+    expect(getFadeOpacity(40, 0.5)).toBeCloseTo(0);
+    expect(getFadeOpacity(40, 0.25)).toBeCloseTo(20);
+    expect(getFadeOpacity(40, 1)).toBeCloseTo(40);
+    expect(getFadeOpacity(0, 0)).toBeCloseTo(0);
+    expect(getFadeOpacity(0, 0.5)).toBeCloseTo(100);
+    expect(getFadeOpacity(0, 1)).toBeCloseTo(0);
+  });
+
+  it("draws an element at its fade's opacity, under the host's override, inside its frame's", () => {
+    const element = box("rectangle", { opacity: 80 });
+    const map = arrayToMap([element]);
+    const opacityWith = (
+      config: Partial<
+        Parameters<typeof resolveElementRenderState>[2]
+      > = {},
+    ) =>
+      resolveElementRenderState(element, map, {
+        elementsPendingErasure: new Set(),
+        pendingFlowchartNodes: null,
+        ...config,
+      }).opacity;
+
+    expect(opacityWith()).toBeCloseTo(0.8);
+    expect(
+      opacityWith({ elementFades: new Map([[element.id, 30]]) }),
+    ).toBeCloseTo(0.3);
+    expect(
+      opacityWith({
+        elementFades: new Map([[element.id, 30]]),
+        elementRenderOverrides: new Map([[element.id, { opacity: 0 }]]),
+      }),
+    ).toBe(0);
   });
 
   it("takes a travelling light's run its outline's length over its speed", () => {
@@ -739,6 +799,7 @@ describe("animation in the editor", () => {
     API.setSelectedElements([arrow]);
 
     expect(screen.getByTestId("animation-effect-chevron")).toBeChecked();
+    expect(screen.getByTestId("animation-effect-fade")).not.toBeChecked();
     expect(screen.queryByTestId("animation-effect-pulse")).toBeNull();
 
     fireEvent.click(screen.getByTestId("animation-effect-dot"));
@@ -953,6 +1014,43 @@ describe("animation in the editor", () => {
     expect(animationLayer()).not.toBeNull();
   });
 
+  it("fades a shape and its label on the board's own canvas, not on the animation layer", async () => {
+    const [rectangle, label] = API.createTextContainer();
+    API.setElements([
+      { ...rectangle, animation: "loop", animationEffect: "fade" },
+      label,
+    ]);
+    const fades = (h.app as unknown as { elementFades: ElementFades })
+      .elementFades;
+    const seen = new Set<string>();
+    const unsubscribe = fades.subscribe(() => {
+      for (const id of fades.current().keys()) {
+        seen.add(id);
+      }
+    });
+    try {
+      await waitFor(() => expect(seen).toEqual(new Set([rectangle.id, label.id])));
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("stops fading once the shape no longer animates", async () => {
+    const rectangle = {
+      ...API.createElement({ type: "rectangle" }),
+      animation: "loop",
+      animationEffect: "fade",
+    } as const;
+    API.setElements([rectangle]);
+    const fades = (h.app as unknown as { elementFades: ElementFades })
+      .elementFades;
+    await waitFor(() => expect(fades.current().size).toBe(1));
+
+    API.updateElement(h.elements[0], { animation: "once" });
+
+    await waitFor(() => expect(fades.current().size).toBe(0));
+  });
+
   it("keeps the markers still when the system asks for reduced motion", async () => {
     const matchMedia = window.matchMedia;
     window.matchMedia = ((query: string) => ({
@@ -969,6 +1067,25 @@ describe("animation in the editor", () => {
     } finally {
       window.matchMedia = matchMedia;
     }
+  });
+});
+
+describe("the fades the board draws", () => {
+  it("tell their listener while some element fades, and once when the last stops", () => {
+    const fades = new ElementFades();
+    const told = vi.fn();
+    fades.subscribe(told);
+
+    fades.set(new Map());
+    expect(told).not.toHaveBeenCalled();
+
+    fades.set(new Map([["a", 40]]));
+    fades.set(new Map([["a", 30]]));
+    fades.set(new Map());
+    fades.set(new Map());
+
+    expect(told).toHaveBeenCalledTimes(3);
+    expect(fades.current().size).toBe(0);
   });
 });
 

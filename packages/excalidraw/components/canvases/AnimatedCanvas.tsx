@@ -3,13 +3,16 @@
  * drawn elements and, while some visible element loops or some element plays
  * a triggered run, and the system does not ask for reduced motion, redraws
  * their animations every frame; with nothing to animate it is not there at
- * all.
+ * all. A Fade is not drawn here: its opacities go to the board's own canvas,
+ * which draws the element fainter where it lies.
  */
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import {
   animationEffectOf,
   getAnimationRunMs,
+  getBoundTextElement,
+  getFadeOpacity,
   getLoopProgress,
   getRunProgress,
   isLooping,
@@ -28,6 +31,7 @@ import type {
   AnimationToDraw,
 } from "../../renderer/animatedScene";
 import type { AnimationRuns } from "../../scene/animationRuns";
+import type { ElementFades } from "../../scene/elementFades";
 
 type AnimatedCanvasProps = Omit<
   AnimatedSceneProps,
@@ -35,6 +39,8 @@ type AnimatedCanvasProps = Omit<
 > & {
   visibleElements: readonly NonDeletedExcalidrawElement[];
   runs: AnimationRuns;
+  /** where this frame's Fades go, for the board's own canvas to draw */
+  fades: ElementFades;
   /** whether the host lets an element animate, beyond the editor's own rule */
   canAnimate: (element: ExcalidrawElement) => boolean;
   /** the window the editor is in, whose frames and motion setting count */
@@ -100,13 +106,29 @@ const animationsAt = (
   return animations;
 };
 
+/** The opacity each Fade gives its element this frame, and a shape's bound label with it */
+const fadeOpacitiesOf = (
+  fading: readonly AnimationToDraw[],
+  elementsMap: NonDeletedSceneElementsMap,
+): Map<string, number> => {
+  const opacities = new Map<string, number>();
+  for (const { element, progress } of fading) {
+    opacities.set(element.id, getFadeOpacity(element.opacity, progress));
+    const label = getBoundTextElement(element, elementsMap);
+    if (label) {
+      opacities.set(label.id, getFadeOpacity(label.opacity, progress));
+    }
+  }
+  return opacities;
+};
+
 /** Draws the animations of looping elements and triggered runs, frame by frame */
 const AnimatedCanvas = (props: AnimatedCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // this editor's own canvas for shimmers, its bitmap let go when nothing animates
   const shimmerCanvas = useRef<HTMLCanvasElement | null>(null);
   const [, runsChanged] = useReducer((count: number) => count + 1, 0);
-  const { runs, ownerWindow } = props;
+  const { runs, fades, ownerWindow } = props;
   useEffect(() => runs.subscribe(runsChanged), [runs]);
   // elements change in place as they are edited, so they are found every render
   const loops = props.visibleElements.filter(
@@ -136,24 +158,33 @@ const AnimatedCanvas = (props: AnimatedCanvasProps) => {
         scene.canAnimate,
         timeMs,
       );
+      fades.set(
+        fadeOpacitiesOf(
+          animations.filter((animation) => animation.effect === "fade"),
+          scene.elementsMap,
+        ),
+      );
       if (canvasRef.current) {
         renderAnimatedScene({
           ...scene,
           canvas: canvasRef.current,
-          animations,
+          animations: animations.filter(
+            (animation) => animation.effect !== "fade",
+          ),
           shimmerCanvas,
         });
       }
     });
     return () => {
       ownerWindow.cancelAnimationFrame(frame);
+      fades.set(new Map());
       if (shimmerCanvas.current) {
         shimmerCanvas.current.width = 0;
         shimmerCanvas.current.height = 0;
         shimmerCanvas.current = null;
       }
     };
-  }, [running, ownerWindow]);
+  }, [running, fades, ownerWindow]);
 
   if (!running) {
     return null;
